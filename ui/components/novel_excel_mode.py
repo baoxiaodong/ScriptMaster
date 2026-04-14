@@ -2,11 +2,13 @@
 小说Excel分镜生成组件 - 纯净版
 彻底移除所有 DEBUG 输出、结果统计和冗余 UI 元素
 """
+import io
 import logging
 import re
 import time
 
 import streamlit as st
+
 from core.processor import NovelModeProcessor
 from ui.components.error_renderer import show_inline_error
 from ui.components.file_upload import render_file_uploader, render_data_preview, render_chapter_selector
@@ -28,7 +30,8 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
         st.session_state.novel_is_generating = False
     if 'novel_results' not in st.session_state:
         st.session_state.novel_results = {}
-
+    if 'novel_outline' not in st.session_state:
+        st.session_state.novel_outline = None
     try:
         uploaded_file = render_file_uploader()
         if uploaded_file is None:
@@ -72,22 +75,26 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                            """,
                     unsafe_allow_html=True
                 )
-            # 按钮逻辑
-            api_ready = st.session_state.get("api_validated", False)
-            if not st.session_state.novel_results:
-                if not api_ready:
-                    st.warning("⚠️ 请在侧边栏验证 API 配置")
-                    st.button("🚀 开始生成", disabled=True, use_container_width=True)
+                # 按钮逻辑
+                api_ready = st.session_state.get("api_validated", False)
+                if not st.session_state.novel_results and not st.session_state.novel_outline:
+                    if not api_ready:
+                        st.warning("⚠️ 请在侧边栏验证 API 配置")
+                        st.button("🚀 开始生成", disabled=True, use_container_width=True)
+                    else:
+                        if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary", use_container_width=True,
+                                     disabled=st.session_state.novel_is_generating):
+                            st.session_state.novel_is_generating = True
+                            _execute_generation_flow(llm_service, selected_df, total_episodes)
                 else:
-                    if st.button(f"🚀 开始生成 {total_episodes} 集分镜", type="primary", use_container_width=True,
+                    if st.button("🗑️ 清除当前结果并重新开始", use_container_width=True,
                                  disabled=st.session_state.novel_is_generating):
-                        st.session_state.novel_is_generating = True
-                        _execute_generation_flow(llm_service, selected_df, total_episodes)
-            else:
-                if st.button("🗑️ 清除当前结果并重新开始", use_container_width=True):
-                    st.session_state.novel_results = {}
-                    st.rerun()
+                        st.session_state.novel_results = {}
+                        st.session_state.novel_outline = None
+                        st.rerun()
 
+        # 🌟 新增：大纲展示区域
+        render_novel_outline_section(llm_service, selected_df, total_episodes)
         # 渲染结果展示
         results = st.session_state.novel_results
         if results:
@@ -121,31 +128,149 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
         )
 
 
-def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
-    """执行生成 - 支持动态集数配置"""
-    processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-    estimated_minutes = f"{max(2, total_episodes // 10)}-{max(3, total_episodes // 8)}"
-    progress_bar = st.progress(0,
-                               text=f"🚀 正在调用 AI 大模型，准备生成 {total_episodes} 集分镜...（预计需要 {estimated_minutes} 分钟）")
+def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
+    """渲染小说大纲展示区域（可编辑 + Word 导出 + 确认生成分镜）"""
+    if not st.session_state.novel_outline:
+        return
 
-    def update_progress_ui(msg: str, val: int):
-        progress_bar.progress(min(val / 100, 1.0), text=f"⏳ 进度: {val}% | {msg}")
+    st.divider()
+    st.markdown("### 📖 分集大纲预览")
+
+    base_name = st.session_state.get('uploaded_file_name', '小说')
+
+    with st.expander("📋 点击编辑大纲", expanded=True):
+        # 🌟 可编辑的大纲文本框
+        edited_outline = st.text_area(
+            "大纲内容（可直接修改）：",
+            value=st.session_state.novel_outline,
+            height=400,
+            label_visibility="collapsed"
+        )
+
+        # 🌟 保存修改按钮
+        if edited_outline != st.session_state.novel_outline:
+            if st.button("💾 保存修改", use_container_width=True):
+                st.session_state.novel_outline = edited_outline
+                st.success("✅ 大纲已保存")
+                st.rerun()
+
+        # 🌟 Word 导出（始终显示，不管有没有修改）
+        try:
+            from docx import Document
+            from docx.shared import Pt
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+            doc = Document()
+
+            # 标题样式
+            title = doc.add_heading(f'{base_name}_分集大纲', 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # 处理大纲内容，清理 markdown 符号
+            outline_text = st.session_state.novel_outline
+            # 移除 markdown 符号
+            outline_text = outline_text.replace('###', '').replace('**', '').replace('*', '')
+            # 移除多余的换行
+            lines = [line.strip() for line in outline_text.split('\n') if line.strip()]
+            clean_text = '\n'.join(lines)
+
+            doc.add_paragraph(clean_text)
+
+            output = io.BytesIO()
+            doc.save(output)
+            output.seek(0)
+
+            st.download_button(
+                label="📄 导出为 Word 文档",
+                data=output.getvalue(),
+                file_name=f"{base_name}_分集大纲.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"❌ Word 导出失败: {str(e)[:100]}")
+
+        # 🌟 确认并生成分镜按钮
+        if st.button("🎬 确认大纲，开始生成分镜", type="primary", use_container_width=True,
+                     disabled=st.session_state.novel_is_generating):
+            st.session_state.novel_is_generating = True
+            _execute_scripts_generation(llm_service, df, total_episodes)
+    st.divider()
+
+
+def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
+    """只生成大纲，生成分镜由用户确认后触发"""
+    logger.info(f"🚀 开始生成 {total_episodes} 集大纲")
+
+    processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
+    outline_minutes = max(1, total_episodes // 15)
+
+    st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
+
+    progress_bar = st.progress(0, text=f"🚀 准备生成 {total_episodes} 集大纲...")
 
     try:
-        results = processor.process(df, on_progress=update_progress_ui)
-        st.session_state.novel_results = results
-        StateManager.set_results(results)
-        progress_bar.progress(1.0, text="✅ 生成完成")
+        logger.info("📖 生成大纲中...")
+        progress_bar.progress(5, text=f"📖 生成{total_episodes}集大纲（预计{outline_minutes}分钟）")
+
+        with st.spinner():
+            outline_text = processor.generate_outline(df, on_progress=lambda msg, val: progress_bar.progress(
+                5 + int(val * 0.15),
+                text=msg
+            ))
+
+        st.session_state.novel_outline = outline_text
+        progress_bar.progress(1.0, text=f"✅ 大纲生成完成")
+        logger.info(f"📖 大纲完成 ({len(outline_text)} 字)")
 
     except Exception as e:
-        # 🛡️ 使用内联错误提示
+        logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
         show_inline_error(
             error_message=str(e),
             error_type="unknown",
             show_details=True
         )
-        logger.error(f"❌ [Generation] 生成失败: {str(e)}", exc_info=True)
     finally:
+        logger.info("🔄 刷新页面")
+        st.session_state.novel_is_generating = False
+        time.sleep(0.5)
+        st.rerun()
+
+
+def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
+    """基于现有大纲生成分镜"""
+    logger.info(f"🎬 开始生成 {total_episodes} 集分镜")
+
+    processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
+    estimated_minutes = f"{max(2, total_episodes // 10)}-{max(3, total_episodes // 8)}"
+
+    st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
+
+    progress_bar = st.progress(0, text=f" 准备生成 {total_episodes} 集分镜...")
+
+    try:
+        logger.info("🎬 生成分镜中...")
+        progress_bar.progress(5, text=f"🎬 生成{total_episodes}集分镜（预计{estimated_minutes}分钟）")
+
+        results = processor.process(df, on_progress=lambda msg, val: progress_bar.progress(
+            5 + int(val * 0.95),
+            text=msg
+        ))
+
+        st.session_state.novel_results = results
+        StateManager.set_results(results)
+        progress_bar.progress(1.0, text="✅ 全部生成完成")
+        logger.info(f"✅ 分镜完成，共 {len(results)} 集")
+
+    except Exception as e:
+        logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
+        show_inline_error(
+            error_message=str(e),
+            error_type="unknown",
+            show_details=True
+        )
+    finally:
+        logger.info("🔄 刷新页面")
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
         st.rerun()

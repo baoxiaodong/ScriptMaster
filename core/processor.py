@@ -25,8 +25,118 @@ class NovelModeProcessor:
         self.system_prompt = PromptTemplates.SCRIPT_SYSTEM
         self.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
 
+    def generate_outline(self, df: pd.DataFrame, on_progress: Optional[Callable] = None) -> str:
+        """生成小说大纲功能 - 支持超长文本分段处理"""
+        full_text = self._combine_chapters(df)
+        text_length = len(full_text)
+        logger.info(f"📝 文本长度: {text_length}")
+
+        if on_progress:
+            # 🌟 根据文本长度动态显示提示语
+            if text_length > 50000:
+                progress_text = f" 正在生成{self.total_episodes}集分集大纲（小说长度{text_length:,}字，内容较长请耐心等待）..."
+            else:
+                progress_text = f"🚀 正在生成{self.total_episodes}集分集大纲..."
+            on_progress(progress_text, 0)
+
+        try:
+            # 🌟 超长文本分段处理阈值
+            MAX_CHUNK_SIZE = 30000
+            if text_length <= MAX_CHUNK_SIZE:
+                # 文本不长，直接生成
+                logger.info("📝 文本长度正常，直接生成")
+                return self._generate_outline_from_text(full_text, on_progress)
+            else:
+                # 超长文本，分段处理
+                chunk_count = text_length // MAX_CHUNK_SIZE + 1
+                logger.info(f"📝 文本超长，分 {chunk_count} 段处理")
+                return self._generate_outline_from_long_text(full_text, text_length, on_progress)
+        except Exception as e:
+            logger.error(f"❌ 大纲生成失败: {str(e)}", exc_info=True)
+            raise
+
+    def _generate_outline_from_text(self, text: str, on_progress: Optional[Callable] = None) -> str:
+        """从文本生成大纲（单次调用）"""
+        prompt = PromptTemplates.OUTLINE_TASK.format(
+            total_episodes=self.total_episodes,
+            user_choice=text
+        )
+
+        outline_text = self.llm_service.generate(
+            PromptTemplates.OUTLINE_SYSTEM,
+            prompt
+        )
+
+        logger.info(f"📝 API返回: {len(outline_text)} 字")
+
+        if outline_text.startswith("❌"):
+            raise Exception(outline_text)
+
+        if on_progress:
+            on_progress(f"✅ {self.total_episodes}集大纲生成完成", 100)
+
+        return outline_text
+
+    def _generate_outline_from_long_text(self, full_text: str, original_length: int,
+                                         on_progress: Optional[Callable] = None) -> str:
+        """从超长文本生成大纲（分段摘要合并策略 - 并行加速）"""
+        import concurrent.futures
+        from threading import Lock
+
+        MAX_CHUNK_SIZE = 30000
+        chunks = [full_text[i:i + MAX_CHUNK_SIZE] for i in range(0, len(full_text), MAX_CHUNK_SIZE)]
+        total_chunks = len(chunks)
+
+        # 🌟 计算总预计时间（并行处理，每段约 40 秒）
+        estimated_total_minutes = max(2, (total_chunks * 40 + 60) // 60)
+
+        summaries = [None] * total_chunks
+        progress_lock = Lock()
+        completed = 0
+
+        def _summarize_chunk(idx, chunk):
+            """处理单个段落摘要"""
+            logger.info(f"📝 处理第 {idx + 1}/{total_chunks} 段")
+
+            summary_prompt = f"""请简要总结以下小说内容的主要情节、人物和关键事件（500字以内）：
+
+    {chunk}
+
+    总结："""
+
+            summary = self.llm_service.generate(
+                "你是一个专业的小说编辑，擅长提炼故事核心内容。",
+                summary_prompt
+            )
+            return idx, f"【第{idx + 1}段摘要】\n{summary}"
+
+        # 🌟 并行处理所有段落摘要（最多 5 个同时处理）
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_idx = {executor.submit(_summarize_chunk, idx, chunk): idx
+                             for idx, chunk in enumerate(chunks)}
+
+            for future in concurrent.futures.as_completed(future_to_idx):
+                idx, summary = future.result()
+                summaries[idx] = summary
+
+                with progress_lock:
+                    completed += 1
+                    if on_progress:
+                        progress_val = int((completed / total_chunks) * 60)
+                        on_progress(
+                            f"📝 正在分析大纲第 {completed}/{total_chunks} 段（小说{original_length:,}字，总预计{estimated_total_minutes}分钟）...",
+                            progress_val)
+
+        combined_summaries = "\n\n".join(summaries)
+        logger.info(f"📝 摘要合并完成，长度: {len(combined_summaries)}")
+
+        if on_progress:
+            on_progress(f"📝 正在基于摘要生成完整大纲（总预计{estimated_total_minutes}分钟）...", 60)
+
+        return self._generate_outline_from_text(combined_summaries, on_progress)
+
     def _combine_chapters(self, df: pd.DataFrame) -> str:
-        """合并章节并增加字符长度安全保护"""
+        """合并章节"""
         contents = []
         for row in df.itertuples(index=False):
             title = str(row[0]) if pd.notna(row[0]) else ""
@@ -35,14 +145,7 @@ class NovelModeProcessor:
                 label = title if title else f"章节{len(contents) + 1}"
                 contents.append(f"【{label}】\n{content}")
 
-        full_text = "\n\n".join(contents)
-
-        # 🌟 设置安全阈值，防止超长导致 API 报错，但移除提示文案
-        MAX_SAFE_CHARS = 100000
-        if len(full_text) > MAX_SAFE_CHARS:
-            full_text = full_text[:MAX_SAFE_CHARS]
-
-        return full_text
+        return "\n\n".join(contents)
 
     def _split_batches(self, df: pd.DataFrame, start_ep: int, end_ep: int) -> Dict[str, pd.DataFrame]:
         """将 AI 生成的大表按集数拆分为字典"""
@@ -105,7 +208,7 @@ class NovelModeProcessor:
         return results
 
     def process(self, df: pd.DataFrame, on_progress: Optional[Callable] = None,
-                    existing_results: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, pd.DataFrame]:
+                existing_results: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, pd.DataFrame]:
         """并行处理入口 - 支持动态配置总集数及跳过已完成批次"""
         import math
         full_text = self._combine_chapters(df)
