@@ -12,6 +12,18 @@ from core.prompts import PromptTemplates
 logger = logging.getLogger("ScriptMaster.ScriptGenerator")
 
 
+def export_outline_to_word(outline_text: str) -> bytes:
+    """导出大纲为 Word 文档"""
+    from docx import Document
+    doc = Document()
+    doc.add_heading('30集分集大纲', 0)
+    doc.add_paragraph(outline_text)
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output.getvalue()
+
+
 def init_script_state():
     """初始化剧本生成相关的session state"""
     if 'generated_acts' not in st.session_state:
@@ -123,10 +135,20 @@ def render_step_2_outline(llm_service):
 
         if st.session_state.outline and not st.session_state.outline.startswith("❌"):
             st.text_area("30集预览：", value=st.session_state.outline, height=250)
+            word_bytes = export_outline_to_word(st.session_state.outline)
+            st.download_button(
+                label="📄 导出为 Word",
+                data=word_bytes,
+                file_name="30集分集大纲.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True
+            )
     except Exception as e:
         st.error(f"❌ 第二步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep2] 渲染异常: {str(e)}", exc_info=True)
         st.session_state.script_is_generating = False
+
+
 
 
 def render_step_3_scripts(llm_service):
