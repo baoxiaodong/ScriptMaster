@@ -1,0 +1,119 @@
+# -*- coding: utf-8 -*-
+"""
+侧边栏组件模块
+"""
+import streamlit as st
+from config.settings import MODEL_OPTIONS, API_BASE_URLS
+from core.llm_service import LLMService
+
+
+def render_sidebar(llm_service: LLMService):
+    """
+    渲染侧边栏
+    """
+    def reset_validation():
+        st.session_state["api_validated"] = False
+
+    with st.sidebar:
+        st.header("[AI] 模型配置")
+
+        provider = st.selectbox(
+            "选择模型厂商",
+            list(MODEL_OPTIONS.keys()) + ["Mock (演示)"],
+            on_change=reset_validation
+        )
+
+        api_key = ""
+        model_name = ""
+        base_url = ""
+
+        if provider == "Mock (演示)":
+            st.info("当前为演示模式，使用内置示例数据，不会消耗 API 额度")
+            st.divider()
+        else:
+            # 初始化 session_state
+            if "show_api_key" not in st.session_state:
+                st.session_state.show_api_key = False
+
+            provider_key = f"api_key_{provider}"
+            if provider_key not in st.session_state:
+                st.session_state[provider_key] = ""
+
+            # 🚀 使用 expander 包裹配置项
+            with st.expander("⚙️ API 详细配置", expanded=True):
+                col_key, col_eye = st.columns([5, 1])
+                with col_key:
+                    api_key = st.text_input(
+                        "API Key",
+                        value=st.session_state[provider_key],
+                        type="password" if not st.session_state.show_api_key else "default",
+                        help="必填，API Key 安全存储不会上传",
+                        placeholder="请输入 API Key",
+                        label_visibility="collapsed",
+                        key="api_key_input",
+                        on_change=reset_validation
+                    )
+                    if api_key:
+                        st.session_state[provider_key] = api_key
+                        st.session_state.api_key_value = api_key
+                with col_eye:
+                    eye_icon = "👁️" if st.session_state.show_api_key else "🔒"
+                    if st.button(eye_icon, key="btn_toggle_eye", help="显示/隐藏 API Key"):
+                        st.session_state.show_api_key = not st.session_state.show_api_key
+                        st.rerun()
+
+                st.markdown(
+                    '<style>'
+                    'section[data-testid="stSidebar"] .stTextInput input[type="text"],'
+                    'section[data-testid="stSidebar"] .stTextInput input[type="password"] {'
+                    '    min-width: 320px;'
+                    '}'
+                    '</style>',
+                    unsafe_allow_html=True
+                )
+
+                model_name = st.selectbox(
+                    "选择模型",
+                    MODEL_OPTIONS.get(provider, [""]),
+                    on_change=reset_validation
+                )
+
+                if api_key:
+                    if st.button("🔍 验证 API Key", key="btn_verify_key", use_container_width=True):
+                        with st.spinner("验证中，请稍候..."):
+                            try:
+                                result = llm_service.generate(
+                                    "你是一个测试助手。",
+                                    "请回复：OK"
+                                )
+                                if result.startswith("❌"):
+                                    st.error("❌ API Key 验证失败：" + result[2:].strip())
+                                else:
+                                    st.success("✅ API Key 验证通过！模型连接正常")
+                                    st.session_state["api_validated"] = True
+                                    st.session_state.api_key_value = api_key
+                            except Exception as e:
+                                st.error("❌ 连接异常：" + str(e)[:80])
+
+            # 🚀 关键：在 expander 外部读取 base_url，确保它总是被定义
+            base_url = API_BASE_URLS.get(provider, "")
+
+        # 更新服务配置
+        llm_service.configure(provider, api_key, model_name, base_url)
+
+        st.divider()
+        with st.expander("📖 使用说明", expanded=False):
+            st.markdown("""
+            **📂 文件格式要求：**
+            - 上传 Excel 时，请确保包含 **章节标题** 和 **内容列**
+            - 第1列：章节标题
+            - 第2列：章节内容
+            
+            **⚙️ 生成标准：**
+            - 每集默认 ≥20 个镜头
+            - 画面描述：中文
+            - 台词 & 音效：英文
+            """)
+
+        return provider, api_key, model_name
+
