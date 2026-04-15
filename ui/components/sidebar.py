@@ -79,8 +79,8 @@ def render_sidebar(llm_service: LLMService):
                 )
 
                 if api_key:
-                    if st.button("🔍 验证 API Key", key="btn_verify_key", use_container_width=True):
-                        with st.spinner("验证中，请稍候..."):
+                    if st.button("🔍 验证 API Key", key="btn_verify_key", width='stretch'):
+                        with st.spinner(f"正在验证{model_name}，请稍候..."):
                             try:
                                 result = llm_service.generate(
                                     "你是一个测试助手。",

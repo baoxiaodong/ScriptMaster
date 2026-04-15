@@ -141,8 +141,11 @@ def _render_batch_download(results: Dict[str, pd.DataFrame]):
     col1, col2 = st.columns(2)
 
     # 🌟 提取基础文件名（去除扩展名）
-    uploaded_file_name = st.session_state.get('uploaded_file_name', '分镜脚本')
-    base_name = os.path.splitext(uploaded_file_name)[0]
+    uploaded_file_name = st.session_state.get('uploaded_file_name', '')
+    if not uploaded_file_name:
+        base_name = "分镜脚本"
+    else:
+        base_name = os.path.splitext(uploaded_file_name)[0]
 
     with col1:
         # Excel 批量下载
