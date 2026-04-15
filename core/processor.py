@@ -6,7 +6,6 @@ from threading import Lock
 from typing import Callable, Dict, Optional
 
 import pandas as pd
-
 from core.llm_service import LLMService
 from core.parser import ScriptParser
 from core.prompts import PromptTemplates
@@ -87,8 +86,8 @@ class NovelModeProcessor:
         chunks = [full_text[i:i + MAX_CHUNK_SIZE] for i in range(0, len(full_text), MAX_CHUNK_SIZE)]
         total_chunks = len(chunks)
 
-        # 🌟 计算总预计时间（并行处理，每段约 40 秒）
-        estimated_total_minutes = max(2, (total_chunks * 40 + 60) // 60)
+        # 🌟 计算总预计时间（并行处理，5个并发同时跑，每段约 40 秒）
+        estimated_total_minutes = max(2, (total_chunks * 40 // 5 + 60) // 60)
 
         summaries = [None] * total_chunks
         progress_lock = Lock()
@@ -207,17 +206,19 @@ class NovelModeProcessor:
 
         return results
 
-    def process(self, df: pd.DataFrame, on_progress: Optional[Callable] = None,
-                existing_results: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, pd.DataFrame]:
-        """并行处理入口 - 支持动态配置总集数及跳过已完成批次"""
+    def process(self, df: pd.DataFrame = None, on_progress: Optional[Callable] = None,
+                existing_results: Optional[Dict[str, pd.DataFrame]] = None,
+                full_text: str = None) -> Dict[str, pd.DataFrame]:
+        """并行处理入口 - 支持动态配置总集数、跳过已完成批次、以及直接传入文本"""
         import math
-        full_text = self._combine_chapters(df)
-        final_results = {}
 
+        # 🌟 兼容逻辑：如果有 full_text 就直接用，否则从 df 提取
+        if full_text is None:
+            full_text = self._combine_chapters(df)
+
+        final_results = {}
         TOTAL_EPISODES = self.total_episodes
         EPISODES_PER_BATCH = 3
-
-        # 使用 math.ceil 确保即使不能整除也能覆盖所有集数
         total_batches_count = math.ceil(TOTAL_EPISODES / EPISODES_PER_BATCH)
 
         # 动态生成批次列表，确保最后一批不会超出总集数

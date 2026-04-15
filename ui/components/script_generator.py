@@ -4,19 +4,22 @@
 import io
 import logging
 import re
+import time
+import zipfile
 
 import pandas as pd
 import streamlit as st
+from core.processor import NovelModeProcessor
 from core.prompts import PromptTemplates
 
 logger = logging.getLogger("ScriptMaster.ScriptGenerator")
 
 
-def export_outline_to_word(outline_text: str) -> bytes:
+def export_outline_to_word(outline_text: str, total_eps: int = 30) -> bytes:
     """导出大纲为 Word 文档"""
     from docx import Document
     doc = Document()
-    doc.add_heading('30集分集大纲', 0)
+    doc.add_heading(f'{total_eps}集分集大纲', 0)
     doc.add_paragraph(outline_text)
     output = io.BytesIO()
     doc.save(output)
@@ -34,6 +37,10 @@ def init_script_state():
         st.session_state.outline = None
     if 'scripts' not in st.session_state:
         st.session_state.scripts = {}
+    if 'script_is_generating' not in st.session_state:
+        st.session_state.script_is_generating = False
+    if 'script_total_episodes' not in st.session_state:
+        st.session_state.script_total_episodes = 30
 
 
 def extract_csv_from_text(text):
@@ -87,11 +94,24 @@ def render_step_1_acts(llm_service):
                     st.rerun()
 
         if st.session_state.generated_acts and not st.session_state.generated_acts.startswith("❌"):
-            st.session_state.selected_act = st.text_area(
-                "确认/修改三幕式构架：",
-                value=st.session_state.generated_acts,
-                height=200
-            )
+            st.divider()
+            st.markdown("**📋 确认/修改三幕式构架**")
+
+            with st.expander("✏️ 点击编辑三幕式构架", expanded=True):
+                edited_act = st.text_area(
+                    "构架内容（可直接修改）：",
+                    value=st.session_state.generated_acts,
+                    height=400,
+                    label_visibility="collapsed"
+                )
+
+                if edited_act != st.session_state.generated_acts:
+                    if st.button("💾 保存修改", use_container_width=True):
+                        st.session_state.generated_acts = edited_act
+                        st.success("✅ 三幕式构架已保存")
+                        st.rerun()
+
+                st.session_state.selected_act = edited_act
     except Exception as e:
         st.error(f"❌ 第一步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep1] 渲染异常: {str(e)}", exc_info=True)
@@ -99,146 +119,253 @@ def render_step_1_acts(llm_service):
 
 
 def render_step_2_outline(llm_service):
-    """第二步：30集大纲扩展 (流式输出)"""
+    """第二步：动态集数大纲扩展 (流式输出 + 可编辑)"""
     try:
         if not st.session_state.get('selected_act') and not st.session_state.get('generated_acts'):
             return
 
-        st.markdown('<div class="step-header">第二步：扩展 30 集连贯大纲</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-header">第二步：扩展分集大纲</div>', unsafe_allow_html=True)
 
-        api_ready = st.session_state.get("api_validated", False)
-        if not api_ready:
-            st.warning("⚠️ 请在侧边栏验证 API 配置")
-            st.button("📈 生成 30 集大纲", disabled=True, key="gen_outline_btn_dis")
-        else:
-            if st.button("📈 生成 30 集大纲", type="primary", key="gen_outline_btn"):
-                st.session_state.script_is_generating = True
-                source_act = st.session_state.get('selected_act') or st.session_state.get('generated_acts')
-                full_response = ""
-                prompt = PromptTemplates.OUTLINE_TASK.format(user_choice=source_act)
-                placeholder = st.empty()
+        source_act = st.session_state.get('selected_act') or st.session_state.get('generated_acts')
 
-                with st.spinner("📖 AI 正在扩展 30 集连贯大纲，请稍候..."):
-                    for chunk in llm_service.generate_stream(PromptTemplates.OUTLINE_SYSTEM, prompt):
-                        full_response += chunk
-                        placeholder.markdown(full_response + "▌")
+        # 大纲生成配置
+        if not st.session_state.outline:
+            st.markdown("**⚙️ 大纲生成配置**")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                total_episodes = st.number_input(
+                    "总集数",
+                    min_value=10,
+                    max_value=100,
+                    value=st.session_state.get('script_total_episodes', 30),
+                    step=5,
+                    help="设置要生成的分集总集数"
+                )
+                st.session_state.script_total_episodes = total_episodes
+            with col2:
+                batch_count = (total_episodes + 2) // 3
+                st.markdown(
+                    f"""
+                           <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; text-align: center;">
+                               <p style="margin: 0; font-size: 14px;">
+                                   📦 分 <b>{batch_count} 次</b> 生成<br>
+                                   <span style="color: #666; font-size: 12px;">每次同时处理 3 集 | 共{total_episodes}集</span>
+                               </p>
+                           </div>
+                           """,
+                    unsafe_allow_html=True
+                )
 
-                placeholder.markdown(full_response)
+            api_ready = st.session_state.get("api_validated", False)
+            if not api_ready:
+                st.warning("⚠️ 请在侧边栏验证 API 配置")
+                st.button(f"📈 生成 {total_episodes} 集大纲", disabled=True, use_container_width=True)
+            else:
+                if st.button(f"📈 生成 {total_episodes} 集大纲", type="primary",
+                             disabled=st.session_state.get('script_is_generating', False),
+                             use_container_width=True):
+                    st.session_state.script_is_generating = True
+                    full_response = ""
+                    prompt = PromptTemplates.OUTLINE_TASK.format(
+                        user_choice=source_act,
+                        total_episodes=total_episodes
+                    )
+                    placeholder = st.empty()
 
-                if full_response.startswith("❌"):
-                    st.error("❌ 大纲生成失败：请检查 API 配置和网络连接")
+                    with st.spinner("📖 AI 正在扩展大纲，请稍候..."):
+                        for chunk in llm_service.generate_stream(PromptTemplates.OUTLINE_SYSTEM, prompt):
+                            full_response += chunk
+                            placeholder.markdown(full_response + "▌")
+
+                    placeholder.markdown(full_response)
+
+                    if full_response.startswith("❌"):
+                        st.error("❌ 大纲生成失败：请检查 API 配置和网络连接")
+                    else:
+                        st.session_state.outline = full_response
+                        st.success(f"✅ {total_episodes} 集大纲生成完成！")
+
                     st.session_state.script_is_generating = False
-                else:
-                    st.session_state.outline = full_response
-                    st.success("✅ 30 集大纲生成完成！")
+                    st.rerun()
+        else:
+            # 大纲已生成，显示编辑区域
+            if st.button("🗑️ 清除大纲并重新生成", use_container_width=True):
+                st.session_state.outline = None
+                st.rerun()
+
+        # 🌟 大纲编辑区（和小说模式一致）
+        if st.session_state.outline and not st.session_state.outline.startswith("❌"):
+            st.divider()
+            st.markdown("**📖 分集大纲预览**")
+
+            with st.expander("📋 点击编辑大纲", expanded=True):
+                edited_outline = st.text_area(
+                    "大纲内容（可直接修改）：",
+                    value=st.session_state.outline,
+                    height=400,
+                    label_visibility="collapsed"
+                )
+
+                if edited_outline != st.session_state.outline:
+                    if st.button("💾 保存修改", use_container_width=True):
+                        st.session_state.outline = edited_outline
+                        st.success("✅ 大纲已保存")
+                        st.rerun()
+
+                # Word 导出
+                total_eps = st.session_state.get('script_total_episodes', 30)
+                word_bytes = export_outline_to_word(st.session_state.outline, total_eps)
+                st.download_button(
+                    label="📄 导出为 Word",
+                    data=word_bytes,
+                    file_name=f"{st.session_state.script_total_episodes}集分集大纲.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+
+                # 确认生成按钮
+                if st.button("🎬 确认大纲，开始生成分镜", type="primary", use_container_width=True,
+                             disabled=st.session_state.get('script_is_generating', False)):
+                    st.session_state.script_is_generating = True
+                    st.success("✅ 已确认，请前往第三步批量生成分镜！")
                     st.rerun()
 
-        if st.session_state.outline and not st.session_state.outline.startswith("❌"):
-            st.text_area("30集预览：", value=st.session_state.outline, height=250)
-            word_bytes = export_outline_to_word(st.session_state.outline)
-            st.download_button(
-                label="📄 导出为 Word",
-                data=word_bytes,
-                file_name="30集分集大纲.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
     except Exception as e:
         st.error(f"❌ 第二步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep2] 渲染异常: {str(e)}", exc_info=True)
         st.session_state.script_is_generating = False
 
 
-
-
 def render_step_3_scripts(llm_service):
-    """第三步：分集分镜批量生成 (进度条 + 实时流式预览)"""
+    """第三步：复用小说模式的并行生成逻辑"""
     try:
         if not st.session_state.outline:
             return
 
         st.markdown('<div class="step-header">第三步：批量生成详细分镜</div>', unsafe_allow_html=True)
+        total_episodes = st.session_state.get('script_total_episodes', 30)
+        results = st.session_state.scripts
 
-        ep_range = st.slider("选择生成的集数范围：", 1, 30, (1, 3))
+        # 🌟 初始化处理器
+        if 'script_processor' not in st.session_state:
+            processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
+            processor.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
+            processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
+            st.session_state.script_processor = processor
 
-        api_ready = st.session_state.get("api_validated", False)
-        if not api_ready:
-            st.warning("⚠️ 请在侧边栏验证 API 配置")
-            st.button("🔥 开始批量执行", disabled=True, key="execute_batch_dis")
+        if not results:
+            api_ready = st.session_state.get("api_validated", False)
+            if not api_ready:
+                st.warning("⚠️ 请在侧边栏验证 API 配置")
+            else:
+                if st.button("🔥 开始批量执行", type="primary",
+                             disabled=st.session_state.get('script_is_generating', False),
+                             use_container_width=True):
+                    st.session_state.script_is_generating = True
+                    progress_bar = st.progress(0, text=f"🚀 并行生成 {total_episodes} 集分镜...")
+                    try:
+                        res = st.session_state.script_processor.process(
+                            full_text=st.session_state.outline,
+                            on_progress=lambda msg, val: progress_bar.progress(val / 100, text=msg)
+                        )
+                        # 统一转为字符串格式存储
+                        st.session_state.scripts = {k: v.to_csv(index=False) if hasattr(v, 'to_csv') else v for k, v in
+                                                    res.items()}
+                        progress_bar.progress(1.0, text="✅ 生成完成")
+                        # 🌟 只有成功才刷新
+                        st.session_state.script_is_generating = False
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ 生成失败: {str(e)}")
+                    finally:
+                        st.session_state.script_is_generating = False
+
         else:
-            if st.button("🔥 开始批量执行", type="primary", key="execute_batch",
+            if st.button("🗑️ 清除当前结果并重新开始", use_container_width=True,
                          disabled=st.session_state.get('script_is_generating', False)):
-                st.session_state.script_is_generating = True
-                start_ep, end_ep = ep_range
-                total = end_ep - start_ep + 1
-
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                preview_header = st.empty()
-                preview_content = st.empty()
-
-                error_detected = False
-                for i, ep_idx in enumerate(range(start_ep, end_ep + 1)):
-                    progress_bar.progress(i / total)
-                    status_text.info(f"正在处理：第 {ep_idx} 集 (进度: {i}/{total})")
-                    preview_header.markdown(f"✍️ **正在书写第 {ep_idx} 集内容...**")
-
-                    full_script = ""
-                    prompt = PromptTemplates.BATCH_SCRIPT_PROMPT.format(
-                        start_ep=ep_idx,
-                        end_ep=ep_idx,
-                        content=st.session_state.outline,
-                        total_episodes=30
-                    )
-
-                    for chunk in llm_service.generate_stream(PromptTemplates.SCRIPT_SYSTEM, prompt):
-                        full_script += chunk
-                        preview_content.code(full_script, language="csv")
-
-                        if chunk.startswith("❌"):
-                            error_detected = True
-                            status_text.error(f"❌ 第 {ep_idx} 集生成失败：请检查 API 配置")
-                            preview_header.empty()
-                            preview_content.empty()
-                            break
-
-                    if error_detected:
-                        progress_bar.progress(0)
-                        break
-
-                    st.session_state.scripts[f"第{ep_idx}集"] = extract_csv_from_text(full_script)
-
-                if not error_detected:
-                    progress_bar.progress(1.0)
-                    status_text.success("✅ 批量生成任务已完成！")
-                    preview_header.empty()
-                    preview_content.empty()
-
-                st.session_state.script_is_generating = False
+                st.session_state.scripts = {}
                 st.rerun()
+
+        # 🌟 补全逻辑
+        if results:
+            error_keys = [k for k, v in results.items() if isinstance(v, str) and v.startswith("❌")]
+            retry_disabled = not error_keys or st.session_state.get('script_is_generating', False)
+            retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，无需补全"
+
+            if st.button(retry_label, use_container_width=True, disabled=retry_disabled):
+                st.session_state.script_is_generating = True
+                progress_bar = st.progress(0, text="🔄 补全失败集数...")
+                try:
+                    res = st.session_state.script_processor.process(
+                        full_text=st.session_state.outline,
+                        existing_results={k: (pd.read_csv(io.StringIO(v)) if v and not v.startswith("❌") else v) for
+                                          k, v in
+                                          results.items()},
+                        on_progress=lambda msg, val: progress_bar.progress(val / 100, text=msg)
+                    )
+                    st.session_state.scripts = {k: v.to_csv(index=False) if hasattr(v, 'to_csv') else v for k, v in
+                                                res.items()}
+                    progress_bar.progress(1.0, text="✅ 补全完成")
+                    # 🌟 只有成功才刷新
+                    st.session_state.script_is_generating = False
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 补全失败: {str(e)}")
+                finally:
+                    # 🌟 失败时只重置状态
+                    st.session_state.script_is_generating = False
+
     except Exception as e:
         st.error(f"❌ 第三步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep3] 渲染异常: {str(e)}", exc_info=True)
-    finally:
-        if st.session_state.get('script_is_generating', False):
-            st.session_state.script_is_generating = False
-            st.rerun()
-
 
 def display_final_tables():
-    """展示生成的脚本"""
+    """展示生成的脚本 + 批量下载"""
     if not st.session_state.scripts:
         return
 
     st.divider()
     st.markdown("### 🎬 剧本库预览")
+    results = st.session_state.scripts
+    sorted_keys = sorted(results.keys(), key=lambda x: int(re.findall(r'\d+', x)[0]))
 
-    sorted_keys = sorted(st.session_state.scripts.keys(), key=lambda x: int(re.findall(r'\d+', x)[0]))
+    # 新增：镜头统计（带容错）
+    total_shots = 0
+    valid_eps = 0
+    for k in sorted_keys:
+        if results[k] and not results[k].startswith("❌"):
+            try:
+                df = pd.read_csv(io.StringIO(results[k]))
+                total_shots += len(df)
+                valid_eps += 1
+            except:
+                pass
+
+    st.markdown(f"📊 **总计：{valid_eps} 集，{total_shots} 个镜头**")
+
+    # 质量检查提示
+    low_shot_eps = []
+    for k in sorted_keys:
+        if results[k] and not results[k].startswith("❌"):
+            try:
+                shot_count = pd.read_csv(io.StringIO(results[k])).shape[0]
+                if shot_count < 20:
+                    low_shot_eps.append((k, shot_count))
+            except:
+                pass
+
+    if low_shot_eps:
+        st.warning(f"⚠️ 以下 {len(low_shot_eps)} 集镜头数不足 20 个，建议点击「补全缺失集数」重试：")
+        for ep, count in low_shot_eps:
+            st.markdown(f"- **{ep}**: {count} 个镜头")
+
     tabs = st.tabs(sorted_keys)
 
     for i, key in enumerate(sorted_keys):
         with tabs[i]:
-            content = st.session_state.scripts[key]
+            content = results[key]
             try:
                 df = pd.read_csv(io.StringIO(content))
                 st.dataframe(df, use_container_width=True, hide_index=True)
@@ -246,6 +373,42 @@ def display_final_tables():
                 st.download_button(f"📥 下载{key}", csv_bytes, f"{key}.csv", "text/csv", key=f"btn_{key}")
             except:
                 st.text_area("内容解析异常，请检查：", value=content, height=200)
+
+    _render_batch_download_script(results)
+
+
+def _render_batch_download_script(results: dict):
+    st.divider()
+    st.markdown("**📥 批量下载**")
+    col1, col2 = st.columns(2)
+    with col1:
+        # Excel 下载
+        excel_output = io.BytesIO()
+        with pd.ExcelWriter(excel_output, engine='openpyxl') as writer:
+            for k, v in results.items():
+                if v and not v.startswith("❌"):
+                    try:
+                        pd.read_csv(io.StringIO(v)).to_excel(writer, sheet_name=k, index=False)
+                    except:
+                        pass
+        excel_output.seek(0)
+        st.download_button("📊 下载 Excel（多工作表）", excel_output.getvalue(), "剧本分镜.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True)
+
+    with col2:
+        if st.button("📦 下载 ZIP（分集 CSV）", use_container_width=True):
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+                for t, c in results.items():
+                    if c and not c.startswith("❌"):
+                        try:
+                            z.writestr(f"{t}_分镜.csv", c.encode('utf-8-sig'))
+                        except:
+                            pass
+            buf.seek(0)
+            st.download_button("✅ 点击下载 ZIP", buf.getvalue(), "剧本分镜集数包.zip", "application/zip",
+                               use_container_width=True, key="btn_zip_script")
 
 
 def render_script_generation_mode(llm_service):

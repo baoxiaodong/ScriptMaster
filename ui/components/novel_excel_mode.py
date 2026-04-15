@@ -8,7 +8,6 @@ import re
 import time
 
 import streamlit as st
-
 from core.processor import NovelModeProcessor
 from ui.components.error_renderer import show_inline_error
 from ui.components.file_upload import render_file_uploader, render_data_preview, render_chapter_selector
@@ -50,45 +49,54 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
             st.divider()
             # 🌟 新增：集数配置输入框
             st.markdown("**⚙️ 生成配置**")
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                total_episodes = st.number_input(
-                    "总集数",
-                    min_value=10,
-                    max_value=100,
-                    value=st.session_state.get('total_episodes', 20),
-                    step=5,
-                    help="设置要生成的分镜总集数（系统将按每 3 集一批并行处理）"
-                )
-                st.session_state.total_episodes = total_episodes
-            with col2:
-                # 显示批次信息
-                batch_count = (total_episodes + 2) // 3
-                st.markdown(
-                    f"""
-                           <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; text-align: center;">
-                               <p style="margin: 0; font-size: 14px;">
-                                   📦 分 <b>{batch_count} 次</b> 生成<br>
-                                   <span style="color: #666; font-size: 12px;">每次同时处理 3 集 | 共{total_episodes}集</span>
-                               </p>
-                           </div>
-                           """,
-                    unsafe_allow_html=True
-                )
-                # 按钮逻辑
+
+            if st.session_state.novel_is_generating:
+                # 生成中：显示全宽进度条和警告
+                st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
+                st.progress(0.1, text="正在执行任务...")
+            else:
+                # 未生成：显示两列配置
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    total_episodes = st.number_input(
+                        "总集数",
+                        min_value=10,
+                        max_value=100,
+                        value=st.session_state.get('total_episodes', 20),
+                        step=5,
+                        help="设置要生成的分镜总集数（系统将按每 3 集一批并行处理）"
+                    )
+                    st.session_state.total_episodes = total_episodes
+                    with col2:
+                        # 显示批次信息
+                        batch_count = (total_episodes + 2) // 3
+                        st.markdown(
+                            f"""
+                                   <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; text-align: center;">
+                                       <p style="margin: 0; font-size: 14px;">
+                                           📦 分 <b>{batch_count} 次</b> 生成<br>
+                                           <span style="color: #666; font-size: 12px;">每次同时处理 3 集 | 共{total_episodes}集</span>
+                                       </p>
+                                   </div>
+                                   """,
+                            unsafe_allow_html=True
+                        )
+
+                # 🌟 修复：将按钮逻辑移出 col2，使其在配置栏下方正常显示
                 api_ready = st.session_state.get("api_validated", False)
                 if not st.session_state.novel_results and not st.session_state.novel_outline:
                     if not api_ready:
                         st.warning("⚠️ 请在侧边栏验证 API 配置")
-                        st.button("🚀 开始生成", disabled=True, use_container_width=True)
+                        st.button("🚀 开始生成", disabled=True)
                     else:
-                        if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary", use_container_width=True,
-                                     disabled=st.session_state.novel_is_generating):
+                        if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary",
+                                     use_container_width=True, disabled=st.session_state.novel_is_generating):
                             st.session_state.novel_is_generating = True
                             _execute_generation_flow(llm_service, selected_df, total_episodes)
                 else:
-                    if st.button("🗑️ 清除当前结果并重新开始", use_container_width=True,
-                                 disabled=st.session_state.novel_is_generating):
+                    if st.button("🗑️ 清除当前结果并重新开始",
+                                 disabled=st.session_state.novel_is_generating,
+                                 use_container_width=True):
                         st.session_state.novel_results = {}
                         st.session_state.novel_outline = None
                         st.rerun()
@@ -222,7 +230,10 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
         st.session_state.novel_outline = outline_text
         progress_bar.progress(1.0, text=f"✅ 大纲生成完成")
         logger.info(f"📖 大纲完成 ({len(outline_text)} 字)")
-
+        # 🌟 新增：只有成功生成后才刷新页面
+        st.session_state.novel_is_generating = False
+        time.sleep(0.5)
+        st.rerun()
     except Exception as e:
         logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
         show_inline_error(
@@ -234,7 +245,6 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
         logger.info("🔄 刷新页面")
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
-        st.rerun()
 
 
 def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
@@ -261,7 +271,10 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
         StateManager.set_results(results)
         progress_bar.progress(1.0, text="✅ 全部生成完成")
         logger.info(f"✅ 分镜完成，共 {len(results)} 集")
-
+        # 🌟 新增：只有成功生成后才刷新页面
+        st.session_state.novel_is_generating = False
+        time.sleep(0.5)
+        st.rerun()
     except Exception as e:
         logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
         show_inline_error(
@@ -273,7 +286,6 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
         logger.info("🔄 刷新页面")
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
-        st.rerun()
 
 
 def _execute_retry_flow(llm_service, df, error_keys, existing_results):
