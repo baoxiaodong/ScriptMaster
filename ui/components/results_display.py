@@ -5,7 +5,9 @@ from typing import Dict
 
 import pandas as pd
 import streamlit as st
-
+import io
+import zipfile
+import os
 from utils.file_handler import FileHandler
 
 
@@ -134,43 +136,42 @@ def _render_single_result(title: str, df: pd.DataFrame):
 
 def _render_batch_download(results: Dict[str, pd.DataFrame]):
     """渲染批量下载按钮"""
-    import io
-    import zipfile
-
     st.divider()
     st.markdown("**📥 批量下载**")
     col1, col2 = st.columns(2)
 
+    # 🌟 提取基础文件名（去除扩展名）
+    uploaded_file_name = st.session_state.get('uploaded_file_name', '分镜脚本')
+    base_name = os.path.splitext(uploaded_file_name)[0]
+
     with col1:
         # Excel 批量下载
         excel_data = FileHandler.export_to_excel(results)
-        base_name = st.session_state.get('uploaded_file_name', '分镜脚本')
         st.download_button(
-            label=f"📊 下载 Excel（多工作表）",
+            label="📊 下载 Excel（多工作表）",
             data=excel_data,
-            file_name=f"全部{base_name}_分镜.xlsx",
+            file_name=f"{base_name}_剧本分镜.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
+            width='stretch'
         )
 
     with col2:
         # ZIP 批量下载（每个集数一个 CSV 文件）
-        if st.button("📦 下载 ZIP（分集 CSV）", use_container_width=True):
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                for title, df in results.items():
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        csv_data = df.to_csv(index=False).encode('utf-8-sig')
-                        # 文件名清理
-                        safe_title = title.replace('/', '_').replace('\\', '_').replace(':', '_')
-                        zip_file.writestr(f"{safe_title}_分镜.csv", csv_data)
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for title, df in results.items():
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    csv_data = df.to_csv(index=False).encode('utf-8-sig')
+                    # 文件名清理
+                    safe_title = title.replace('/', '_').replace('\\', '_').replace(':', '_')
+                    zip_file.writestr(f"{safe_title}_分镜.csv", csv_data)
 
-            zip_buffer.seek(0)
-            st.download_button(
-                label=f"✅ 点击下载 ZIP",
-                data=zip_buffer.getvalue(),
-                file_name=f"{base_name}_分镜集数包.zip",
-                mime="application/zip",
-                use_container_width=True,
-                key="btn_download_zip"
-            )
+        zip_buffer.seek(0)
+        st.download_button(
+            label="📦 下载 ZIP（分集 CSV）",
+            data=zip_buffer.getvalue(),
+            file_name=f"{base_name}_分镜集数包.zip",
+            mime="application/zip",
+            width='stretch',
+            key="btn_download_zip"
+        )

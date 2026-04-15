@@ -90,13 +90,13 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                         st.button("🚀 开始生成", disabled=True)
                     else:
                         if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary",
-                                     use_container_width=True, disabled=st.session_state.novel_is_generating):
+                                     width='stretch', disabled=st.session_state.novel_is_generating):
                             st.session_state.novel_is_generating = True
                             _execute_generation_flow(llm_service, selected_df, total_episodes)
                 else:
                     if st.button("🗑️ 清除当前结果并重新开始",
                                  disabled=st.session_state.novel_is_generating,
-                                 use_container_width=True):
+                                 width='stretch'):
                         st.session_state.novel_results = {}
                         st.session_state.novel_outline = None
                         st.rerun()
@@ -122,7 +122,7 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
             retry_disabled = not error_keys or st.session_state.novel_is_generating
             retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，无需补全"
 
-            if st.button(retry_label, use_container_width=True, disabled=retry_disabled,
+            if st.button(retry_label, width='stretch', disabled=retry_disabled,
                          key=f"btn_retry_novel_{len(error_keys)}"):
                 st.session_state.novel_is_generating = True
                 _execute_retry_flow(llm_service, selected_df, error_keys, sorted_results)
@@ -157,7 +157,7 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
 
         # 🌟 保存修改按钮
         if edited_outline != st.session_state.novel_outline:
-            if st.button("💾 保存修改", use_container_width=True):
+            if st.button("💾 保存修改", width='stretch'):
                 st.session_state.novel_outline = edited_outline
                 st.success("✅ 大纲已保存")
                 st.rerun()
@@ -193,13 +193,13 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
                 data=output.getvalue(),
                 file_name=f"{base_name}_分集大纲.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
+                width='stretch'
             )
         except Exception as e:
             st.error(f"❌ Word 导出失败: {str(e)[:100]}")
 
         # 🌟 确认并生成分镜按钮
-        if st.button("🎬 确认大纲，开始生成分镜", type="primary", use_container_width=True,
+        if st.button("🎬 确认大纲，开始生成分镜", type="primary", width='stretch',
                      disabled=st.session_state.novel_is_generating):
             st.session_state.novel_is_generating = True
             _execute_scripts_generation(llm_service, df, total_episodes)

@@ -83,7 +83,7 @@ def _render_action_buttons(
     # 重置按钮
     if show_reset:
         with columns[col_index]:
-            if st.button("🔄 重置状态并重试", key=f"reset_{error_type}", use_container_width=True):
+            if st.button("🔄 重置状态并重试", key=f"reset_{error_type}", width='stretch'):
                 if reset_callback:
                     reset_callback()
                 else:
@@ -93,7 +93,7 @@ def _render_action_buttons(
     # 首页按钮
     if show_home:
         with columns[col_index]:
-            if st.button("🏠 返回首页", key=f"home_{error_type}", use_container_width=True):
+            if st.button("🏠 返回首页", key=f"home_{error_type}", width='stretch'):
                 if home_callback:
                     home_callback()
                 else:

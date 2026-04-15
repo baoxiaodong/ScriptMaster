@@ -303,9 +303,11 @@ class NovelModeProcessor:
                     with self.results_lock:
                         final_results.update(res)
                     completed += 1
+                    completed_episodes = min(completed * EPISODES_PER_BATCH, TOTAL_EPISODES)
+
                     if on_progress:
                         # 显示已完成的集数范围
-                        on_progress(f"已完成 {completed * EPISODES_PER_BATCH}/{TOTAL_EPISODES} 集",
+                        on_progress(f"已完成 {completed_episodes}/{TOTAL_EPISODES} 集",
                                     int(completed / total_batches * 100))
                 except Exception as e:
                     with self.results_lock:

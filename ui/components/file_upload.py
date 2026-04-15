@@ -349,12 +349,12 @@ def render_chapter_selector(df: pd.DataFrame) -> list:
     if mode == "手动":
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
-            if st.button("☑️ 全选", use_container_width=True, key="btn_select_all_chapters"):
+            if st.button("☑️ 全选", width='stretch', key="btn_select_all_chapters"):
                 st.session_state.selected_chapter_indices = all_indices.copy()
                 st.session_state["_chapter_rerun_count"] = 0
                 st.rerun()
         with btn_col2:
-            if st.button("🔲 全不选", use_container_width=True, key="btn_deselect_all_chapters"):
+            if st.button("🔲 全不选", width='stretch', key="btn_deselect_all_chapters"):
                 st.session_state.selected_chapter_indices = []
                 st.session_state["_chapter_rerun_count"] = 0
                 st.rerun()

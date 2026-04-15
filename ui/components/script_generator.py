@@ -69,7 +69,7 @@ def _render_step1_buttons(api_ready: bool):
             st.rerun()
         return "ready_to_generate"
     else:
-        if st.button("🗑️ 清除三幕式并重新生成", use_container_width=True,
+        if st.button("🗑️ 清除三幕式并重新生成", width='stretch',
                      disabled=st.session_state.get('script_is_generating', False)):
             st.session_state.generated_acts = None
             st.session_state.selected_act = None
@@ -157,7 +157,7 @@ def _render_step1_editor(current_act: str, acts_list: list):
             label_visibility="collapsed"
         )
 
-        if st.button("💾 保存修改", use_container_width=True):
+        if st.button("💾 保存修改", width='stretch'):
             # 🌟 关键：把修改后的内容替换回总库
             if len(acts_list) > 1:
                 acts_list[st.session_state.selected_act_index] = edited_act
@@ -229,12 +229,12 @@ def _render_step2_buttons(api_ready: bool, total_episodes: int, batch_count: int
 
     if not api_ready:
         st.warning("⚠️ 请在侧边栏验证 API 配置")
-        st.button(f"📈 生成 {total_episodes} 集大纲", disabled=True, use_container_width=True)
+        st.button(f"📈 生成 {total_episodes} 集大纲", disabled=True, width='stretch')
         return "waiting_api"
     else:
         if st.button(f"📈 生成 {total_episodes} 集大纲", type="primary",
                      disabled=st.session_state.get('script_is_generating', False),
-                     use_container_width=True):
+                     width='stretch'):
             st.session_state.script_is_generating = True
             st.rerun()
         return "ready_to_generate"
@@ -289,6 +289,24 @@ def _execute_step2_generation(llm_service, source_act: str):
         st.rerun()
 
 
+def _extract_script_title(act_text: str) -> str:
+    """从创意文本中提取剧名"""
+    if not act_text:
+        return "未命名剧本"
+
+    # 尝试从第一行提取剧名（通常在《》或"Resolution:"之后）
+    first_line = act_text.split('\n')[0].strip()
+
+    # 匹配《剧名》格式
+    import re
+    match = re.search(r'《(.+?)》', first_line)
+    if match:
+        return match.group(1)
+
+    # 如果没有《》，取第一行前20个字符
+    return first_line[:20] if first_line else "未命名剧本"
+
+
 def _render_step2_editor_and_export():
     """第二步: 渲染大纲编辑和导出区域"""
     st.divider()
@@ -303,7 +321,7 @@ def _render_step2_editor_and_export():
         )
 
         if edited_outline != st.session_state.outline:
-            if st.button("💾 保存修改", use_container_width=True):
+            if st.button("💾 保存修改", width='stretch'):
                 st.session_state.outline = edited_outline
                 st.success("✅ 大纲已保存")
                 st.rerun()
@@ -311,12 +329,17 @@ def _render_step2_editor_and_export():
         # Word 导出
         total_eps = st.session_state.get('script_total_episodes', 30)
         word_bytes = export_outline_to_word(st.session_state.outline, total_eps)
+
+        # 🌟 提取剧名作为文件名
+        source_act = st.session_state.get('selected_act') or st.session_state.get('generated_acts', '')
+        script_title = _extract_script_title(source_act)
+
         st.download_button(
             label="📄 导出为 Word",
             data=word_bytes,
-            file_name=f"{st.session_state.script_total_episodes}集分集大纲.docx",
+            file_name=f"{script_title}_{total_eps}集大纲.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True
+            width='stretch'
         )
         st.info("💡 提示: 大纲确认无误后，请向下滚动到第三步，点击「开始批量执行」生成分镜")
 
@@ -342,7 +365,7 @@ def render_step_2_outline(llm_service):
             )
         else:
             # 大纲已生成，显示清除按钮
-            if st.button("🗑️ 清除大纲并重新生成", use_container_width=True,
+            if st.button("🗑️ 清除大纲并重新生成", width='stretch',
                          disabled=st.session_state.get('script_is_generating', False)):
                 st.session_state.outline = None
                 st.rerun()
@@ -365,7 +388,7 @@ def _execute_step3_generation(total_episodes: int):
     """第三步: 执行分镜批量生成逻辑"""
     # 🌟 动态计算预计时间（根据总集数）
     min_minutes = max(2, total_episodes // 10)
-    max_minutes = max(3, total_episodes // 8)
+    max_minutes = max(3, (total_episodes + 5) // 8)
     estimated_minutes = f"{min_minutes}-{max_minutes}"
     progress_bar = st.progress(0,
                                text=f"🚀 并行生成 {total_episodes} 集分镜（预计{estimated_minutes}分钟）...")
@@ -437,11 +460,11 @@ def render_step_3_scripts(llm_service):
             else:
                 if st.button("🔥 开始批量执行", type="primary",
                              disabled=st.session_state.get('script_is_generating', False),
-                             use_container_width=True):
+                             width='stretch'):
                     st.session_state.script_is_generating = True
                     st.rerun()
         else:
-            if st.button("🗑️ 清除当前结果并重新开始", use_container_width=True,
+            if st.button("🗑️ 清除当前结果并重新开始", width='stretch',
                          disabled=st.session_state.get('script_is_generating', False)):
                 st.session_state.scripts = {}
                 st.rerun()
@@ -450,15 +473,17 @@ def render_step_3_scripts(llm_service):
         if st.session_state.script_is_generating and not st.session_state.scripts:
             _execute_step3_generation(total_episodes)
 
-        # 🌟 步骤 3: 补全逻辑
+        # 🌟 补全逻辑 - 优化: 全部成功时不显示按钮
         if results:
             error_keys = [k for k, v in results.items() if isinstance(v, str) and v.startswith("❌")]
-            retry_disabled = not error_keys or st.session_state.get('script_is_generating', False)
-            retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，无需补全"
 
-            if st.button(retry_label, use_container_width=True, disabled=retry_disabled):
-                st.session_state.script_is_generating = True
-                _execute_step3_retry(results)
+            # 只有存在错误集数时才显示补全按钮
+            if error_keys and not st.session_state.get('script_is_generating', False):
+                retry_label = f"🔄 补全缺失集数 ({len(error_keys)}集)"
+
+                if st.button(retry_label, width='stretch'):
+                    st.session_state.script_is_generating = True
+                    _execute_step3_retry(results)
 
     except Exception as e:
         st.error(f"❌ 第三步加载异常: {str(e)[:60]}")
@@ -476,7 +501,7 @@ def display_final_tables():
     results = st.session_state.scripts
     sorted_keys = sorted(results.keys(), key=lambda x: int(re.findall(r'\d+', x)[0]))
 
-    # 新增：镜头统计（带容错）
+    # 镜头统计（带容错）
     total_shots = 0
     valid_eps = 0
     for k in sorted_keys:
@@ -506,18 +531,24 @@ def display_final_tables():
         for ep, count in low_shot_eps:
             st.markdown(f"- **{ep}**: {count} 个镜头")
 
-    tabs = st.tabs(sorted_keys)
+    # 🌟 优化: 使用下拉框替代 Tabs，支持 100 集也整洁
+    selected_key = st.selectbox(
+        "🎬 选择查看集数：",
+        options=sorted_keys,
+        format_func=lambda x: f"📺 {x}",
+        index=0
+    )
 
-    for i, key in enumerate(sorted_keys):
-        with tabs[i]:
-            content = results[key]
-            try:
-                df = pd.read_csv(io.StringIO(content))
-                st.dataframe(df, use_container_width=True, hide_index=True)
-                csv_bytes = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(f"📥 下载{key}", csv_bytes, f"{key}.csv", "text/csv", key=f"btn_{key}")
-            except:
-                st.text_area("内容解析异常，请检查：", value=content, height=200)
+    if selected_key:
+        content = results[selected_key]
+        try:
+            df = pd.read_csv(io.StringIO(content))
+            st.dataframe(df, width='stretch', hide_index=True)
+            csv_bytes = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(f"📥 下载{selected_key}", csv_bytes, f"{selected_key}.csv", "text/csv",
+                               key=f"btn_{selected_key}")
+        except:
+            st.text_area("内容解析异常，请检查：", value=content, height=200)
 
     _render_batch_download_script(results)
 
@@ -525,6 +556,13 @@ def display_final_tables():
 def _render_batch_download_script(results: dict):
     st.divider()
     st.markdown("**📥 批量下载**")
+
+    # 🌟 提取剧名
+    source_act = st.session_state.get('selected_act') or st.session_state.get('generated_acts', '')
+    import re
+    match = re.search(r'《(.+?)》', source_act)
+    script_title = match.group(1) if match else "未命名剧本"
+
     col1, col2 = st.columns(2)
     with col1:
         # Excel 下载
@@ -537,23 +575,30 @@ def _render_batch_download_script(results: dict):
                     except:
                         pass
         excel_output.seek(0)
-        st.download_button("📊 下载 Excel（多工作表）", excel_output.getvalue(), "剧本分镜.xlsx",
+        st.download_button("📊 下载 Excel（多工作表）", excel_output.getvalue(),
+                           f"{script_title}_剧本分镜.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                           use_container_width=True)
+                           width='stretch')
 
     with col2:
-        if st.button("📦 下载 ZIP（分集 CSV）", use_container_width=True):
-            buf = io.BytesIO()
-            with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-                for t, c in results.items():
-                    if c and not c.startswith("❌"):
-                        try:
-                            z.writestr(f"{t}_分镜.csv", c.encode('utf-8-sig'))
-                        except:
-                            pass
-            buf.seek(0)
-            st.download_button("✅ 点击下载 ZIP", buf.getvalue(), "剧本分镜集数包.zip", "application/zip",
-                               use_container_width=True, key="btn_zip_script")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            for t, c in results.items():
+                if c and not c.startswith("❌"):
+                    try:
+                        z.writestr(f"{t}_分镜.csv", c.encode('utf-8-sig'))
+                    except:
+                        pass
+        buf.seek(0)
+
+        st.download_button(
+            label="📦 点击下载 ZIP（分集 CSV）",
+            data=buf.getvalue(),
+            file_name=f"{script_title}_分镜集数包.zip",
+            mime="application/zip",
+            width='stretch',
+            key="btn_zip_script"
+        )
 
 
 def render_script_generation_mode(llm_service):
