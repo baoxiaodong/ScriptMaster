@@ -78,7 +78,16 @@ def render_step_1_acts(llm_service):
                 prompt = PromptTemplates.ACT_GEN_TASK.format(original_idea=original_idea)
                 placeholder = st.empty()
 
-                with st.spinner("🤖 AI 编剧正在构思剧情，请稍候..."):
+                # 🌟 动态计算预计时间（根据创意文本长度）
+                idea_length = len(original_idea)
+                if idea_length < 100:
+                    estimated_time = "30-60秒"
+                elif idea_length < 500:
+                    estimated_time = "1-2分钟"
+                else:
+                    estimated_time = "2-3分钟"
+
+                with st.spinner(f"🤖 AI 编剧正在构思剧情（预计{estimated_time}）..."):
                     for chunk in llm_service.generate_stream("你是一个专业编剧，擅长爆款短剧设定。", prompt):
                         full_response += chunk
                         placeholder.markdown(full_response + "▌")
@@ -95,23 +104,54 @@ def render_step_1_acts(llm_service):
 
         if st.session_state.generated_acts and not st.session_state.generated_acts.startswith("❌"):
             st.divider()
-            st.markdown("**📋 确认/修改三幕式构架**")
+            st.markdown("**📋 选择并修改三幕式构架**")
 
-            with st.expander("✏️ 点击编辑三幕式构架", expanded=True):
+            # 🌟 分割创意
+            acts_list = st.session_state.generated_acts.split("---")
+            acts_list = [a.strip() for a in acts_list if a.strip()]
+
+            if len(acts_list) > 1:
+                # 提取标题
+                act_titles = [a.split("\n")[0][:30] + "..." for a in acts_list]
+
+                # 确保 selected_act_index 存在
+                if 'selected_act_index' not in st.session_state:
+                    st.session_state.selected_act_index = 0
+
+                # 渲染单选框
+                st.session_state.selected_act_index = st.radio(
+                    "请选择要生成大纲的创意：",
+                    options=range(len(acts_list)),
+                    format_func=lambda x: f"创意 {x + 1}: {act_titles[x]}",
+                    horizontal=True,
+                    key="act_radio"
+                )
+
+                # 同步当前选中的内容到编辑框
+                current_act = acts_list[st.session_state.selected_act_index]
+            else:
+                current_act = st.session_state.generated_acts
+                st.session_state.selected_act_index = 0
+
+            with st.expander("✏️ 点击编辑选中的三幕式构架", expanded=True):
                 edited_act = st.text_area(
                     "构架内容（可直接修改）：",
-                    value=st.session_state.generated_acts,
+                    value=current_act,
                     height=400,
                     label_visibility="collapsed"
                 )
 
-                if edited_act != st.session_state.generated_acts:
-                    if st.button("💾 保存修改", use_container_width=True):
+                if st.button("💾 保存修改", use_container_width=True):
+                    # 🌟 关键：把修改后的内容替换回总库
+                    if len(acts_list) > 1:
+                        acts_list[st.session_state.selected_act_index] = edited_act
+                        st.session_state.generated_acts = "\n\n---\n\n".join(acts_list)
+                    else:
                         st.session_state.generated_acts = edited_act
-                        st.success("✅ 三幕式构架已保存")
-                        st.rerun()
 
-                st.session_state.selected_act = edited_act
+                    st.session_state.selected_act = edited_act
+                    st.success("✅ 创意已保存并同步")
+                    st.rerun()
     except Exception as e:
         st.error(f"❌ 第一步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep1] 渲染异常: {str(e)}", exc_info=True)
@@ -166,18 +206,35 @@ def render_step_2_outline(llm_service):
                              use_container_width=True):
                     st.session_state.script_is_generating = True
                     full_response = ""
+
+                    # 🌟 动态计算预计时间（根据集数和创意长度）
+                    source_length = len(source_act)
+                    if total_episodes <= 20:
+                        if source_length < 500:
+                            estimated_time = "1-2分钟"
+                        else:
+                            estimated_time = "2-3分钟"
+                    elif total_episodes <= 50:
+                        if source_length < 500:
+                            estimated_time = "2-3分钟"
+                        else:
+                            estimated_time = "3-5分钟"
+                    else:
+                        if source_length < 500:
+                            estimated_time = "3-5分钟"
+                        else:
+                            estimated_time = "5-8分钟"
+
                     prompt = PromptTemplates.OUTLINE_TASK.format(
                         user_choice=source_act,
                         total_episodes=total_episodes
                     )
                     placeholder = st.empty()
 
-                    with st.spinner("📖 AI 正在扩展大纲，请稍候..."):
+                    with st.spinner(f"📖 AI 正在扩展大纲（预计{estimated_time}）..."):
                         for chunk in llm_service.generate_stream(PromptTemplates.OUTLINE_SYSTEM, prompt):
                             full_response += chunk
                             placeholder.markdown(full_response + "▌")
-
-                    placeholder.markdown(full_response)
 
                     if full_response.startswith("❌"):
                         st.error("❌ 大纲生成失败：请检查 API 配置和网络连接")
@@ -224,10 +281,10 @@ def render_step_2_outline(llm_service):
                 )
 
                 # 确认生成按钮
-                if st.button("🎬 确认大纲，开始生成分镜", type="primary", use_container_width=True,
-                             disabled=st.session_state.get('script_is_generating', False)):
+                if st.button("🎬 确认大纲,开始生成分镜", type="primary", use_container_width=True,
+                             disabled=st.session_state.script_is_generating):
                     st.session_state.script_is_generating = True
-                    st.success("✅ 已确认，请前往第三步批量生成分镜！")
+                    st.success("✅ 已确认,请前往第三步批量生成分镜!")
                     st.rerun()
 
     except Exception as e:
@@ -262,7 +319,12 @@ def render_step_3_scripts(llm_service):
                              disabled=st.session_state.get('script_is_generating', False),
                              use_container_width=True):
                     st.session_state.script_is_generating = True
-                    progress_bar = st.progress(0, text=f"🚀 并行生成 {total_episodes} 集分镜...")
+                    # 🌟 动态计算预计时间（根据总集数）
+                    min_minutes = max(2, total_episodes // 10)
+                    max_minutes = max(3, total_episodes // 8)
+                    estimated_minutes = f"{min_minutes}-{max_minutes}"
+                    progress_bar = st.progress(0,
+                                               text=f"🚀 并行生成 {total_episodes} 集分镜（预计{estimated_minutes}分钟）...")
                     try:
                         res = st.session_state.script_processor.process(
                             full_text=st.session_state.outline,
@@ -320,6 +382,7 @@ def render_step_3_scripts(llm_service):
     except Exception as e:
         st.error(f"❌ 第三步加载异常: {str(e)[:60]}")
         logger.error(f"❌ [ScriptStep3] 渲染异常: {str(e)}", exc_info=True)
+
 
 def display_final_tables():
     """展示生成的脚本 + 批量下载"""
