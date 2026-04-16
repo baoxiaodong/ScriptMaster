@@ -378,7 +378,7 @@ def render_step_2_outline(llm_service):
         # 🌟 步骤 2: 如果需要生成，执行生成逻辑
         if st.session_state.script_is_generating and not st.session_state.outline:
             _execute_step2_generation(llm_service, source_act)
-
+            return
         # 🌟 步骤 3: 如果已生成，显示编辑和导出区域
         if st.session_state.outline and not st.session_state.outline.startswith("❌"):
             _render_step2_editor_and_export()
@@ -487,12 +487,13 @@ def render_step_3_scripts(llm_service):
         # 🌟 步骤 2: 如果需要生成，执行生成逻辑
         if st.session_state.script_is_generating and not st.session_state.scripts:
             _execute_step3_generation(total_episodes)
-
+            return
         # 🌟 改成异步流程（与小说模式一致）
         if st.session_state.script_is_generating and st.session_state.scripts:
             error_keys = [k for k, v in st.session_state.scripts.items() if isinstance(v, str) and v.startswith("❌")]
             if error_keys:
                 _execute_step3_retry(st.session_state.scripts)
+                return
         elif st.session_state.scripts:
             error_keys = [k for k, v in st.session_state.scripts.items() if isinstance(v, str) and v.startswith("❌")]
             if error_keys and not st.session_state.get('script_is_generating', False):

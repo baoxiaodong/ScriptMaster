@@ -3,6 +3,7 @@
 侧边栏组件模块
 """
 import streamlit as st
+
 from config.settings import MODEL_OPTIONS, API_BASE_URLS
 from core.llm_service import LLMService
 
@@ -11,8 +12,12 @@ def render_sidebar(llm_service: LLMService):
     """
     渲染侧边栏
     """
+
     def reset_validation():
         st.session_state["api_validated"] = False
+        # 🌟 清除验证结果
+        if 'api_validation_result' in st.session_state:
+            del st.session_state['api_validation_result']
 
     with st.sidebar:
         st.header("[AI] 模型配置")
@@ -39,7 +44,7 @@ def render_sidebar(llm_service: LLMService):
             if provider_key not in st.session_state:
                 st.session_state[provider_key] = ""
 
-            # 🚀 使用 expander 包裹配置项
+            #  使用 expander 包裹配置项
             with st.expander("⚙️ API 详细配置", expanded=True):
                 col_key, col_eye = st.columns([5, 1])
                 with col_key:
@@ -79,7 +84,22 @@ def render_sidebar(llm_service: LLMService):
                 )
 
                 if api_key:
-                    if st.button("🔍 验证 API Key", key="btn_verify_key", width='stretch'):
+                    # 🌟 修复1：验证提示持久化显示
+                    if 'api_validation_result' in st.session_state:
+                        result = st.session_state['api_validation_result']
+                        if result.startswith("✅"):
+                            st.success(result)
+                        else:
+                            st.error(result)
+
+                    # 🌟 修复2：验证按钮状态管理
+                    is_verifying = st.session_state.get('_verifying_api', False)
+
+                    if st.button("🔍 验证 API Key", key="btn_verify_key", disabled=is_verifying, width='stretch'):
+                        # 🌟 设置验证中状态
+                        st.session_state['_verifying_api'] = True
+                        st.session_state['api_validation_result'] = None  # 清除旧结果
+
                         with st.spinner(f"正在验证{model_name}，请稍候..."):
                             try:
                                 result = llm_service.generate(
@@ -87,14 +107,20 @@ def render_sidebar(llm_service: LLMService):
                                     "请回复：OK"
                                 )
                                 if result.startswith("❌"):
-                                    st.error("❌ API Key 验证失败：" + result[2:].strip())
+                                    st.session_state['api_validation_result'] = "❌ API Key 验证失败：" + result[2:].strip()
+                                    st.toast("❌ API Key 验证失败，请检查配置", icon="❌")
                                 else:
-                                    st.success("✅ API Key 验证通过！模型连接正常")
+                                    st.session_state['api_validation_result'] = "✅ API Key 验证通过！模型连接正常"
                                     st.session_state["api_validated"] = True
                                     st.session_state.api_key_value = api_key
-                                    st.rerun()
+                                    st.toast("✅ API Key 验证通过！", icon="✅")
                             except Exception as e:
-                                st.error("❌ 连接异常：" + str(e)[:80])
+                                st.session_state['api_validation_result'] = "❌ 连接异常：" + str(e)[:80]
+                                st.toast("❌ 连接异常，请检查网络", icon="❌")
+                            finally:
+                                #  验证完成，清除验证中状态
+                                st.session_state['_verifying_api'] = False
+                                st.rerun()
 
             # 🚀 关键：在 expander 外部读取 base_url，确保它总是被定义
             base_url = API_BASE_URLS.get(provider, "")
@@ -120,4 +146,3 @@ def render_sidebar(llm_service: LLMService):
             """)
 
         return provider, api_key, model_name
-

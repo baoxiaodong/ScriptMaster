@@ -6,6 +6,7 @@
 """
 
 import streamlit as st
+
 from core.llm_service import LLMService
 
 
@@ -14,8 +15,10 @@ class StateManager:
 
     # 🌟 新增：命名空间定义
     NAMESPACES = {
-        'novel_mode': ['novel_results', 'selected_chapter_indices', 'chapter_select_mode', 'novel_is_generating'],
-        'script_mode': ['scripts', 'outline', 'generated_acts', 'selected_act', 'script_is_generating'],
+        'novel_mode': ['novel_results', 'novel_outline', 'novel_is_generating', 'total_episodes',
+                       'selected_chapter_indices', 'chapter_select_mode'],
+        'script_mode': ['scripts', 'outline', 'generated_acts', 'selected_act', 'script_is_generating',
+                        'script_total_episodes'],
         'common': ['generated_results', 'selected_chapters', '_last_mode']
     }
 
