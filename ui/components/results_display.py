@@ -133,8 +133,7 @@ def _render_single_result(title: str, df: pd.DataFrame):
         mime='text/csv',
         width='stretch'
     )
-
-    def _render_batch_download(results: Dict[str, pd.DataFrame]):
+def _render_batch_download(results: Dict[str, pd.DataFrame]):
         """渲染批量下载按钮"""
         st.divider()
         st.markdown("**📥 批量下载**")
