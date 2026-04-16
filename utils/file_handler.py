@@ -1,8 +1,4 @@
-""" 文件处理模块 - 修复版 v2.0
-修复内容：
-1. 修复表头检测逻辑，避免误判"第一章"等正文为表头
-2. 保留所有列数据，仅警告多余列
-3. 增强正则安全性
+""" 文件处理模块
 """
 
 import io
@@ -10,14 +6,16 @@ import re
 import logging
 from typing import Dict
 import pandas as pd
+import streamlit as st  # 🚀 必须导入 streamlit 才能使用缓存
 
-logger = logging.getLogger("ScriptMaster.FileHandler")
+logger = logging.getLogger("XiaoShuoFenjing.FileHandler")
 
 
 class FileHandler:
     """文件处理器"""
 
     @staticmethod
+    @st.cache_data(show_spinner=False)  #
     def read_file(file) -> pd.DataFrame:
         """
         读取上传的文件并自动识别表头，支持 CSV 和 Excel。
@@ -45,33 +43,22 @@ class FileHandler:
                 logger.warning("文件为空或仅包含空行")
                 return pd.DataFrame()
 
-            # 2. 🌟 修复：更精确的表头检测逻辑
             if len(df) > 0:
                 first_row = df.iloc[0].astype(str).tolist()
                 col1 = first_row[0].strip() if len(first_row) > 0 else ""
                 col2 = first_row[1].strip() if len(first_row) > 1 else ""
 
-                # 定义表头关键字（必须是纯表头词，不是正文内容）
-                pure_header_keywords = ['标题', '章节', 'chapter', 'title', 'content', '正文', '内容', 'text',
-                                        '正文内容']
-
-                # 🌟 修复逻辑：只有当第一行同时满足以下条件才认为是表头：
-                # 1. 两列都包含表头关键词
-                # 2. 内容很短（表头描述通常很短）
-                # 3. 不包含"第X章"、"Chapter X"等正文章节标记
-                # 4. 第二列不是长文本（正文通常很长）
+                pure_header_keywords = ['标题', '章节', 'chapter', 'title', 'content', '正文', '内容']
 
                 is_header = False
                 has_chapter_mark = bool(re.search(r'第\s*\d+\s*章|chapter\s*\d+|第\s*[一二三四五]\s*章', col1, re.I))
 
-                if not has_chapter_mark:  # 如果包含"第一章"等标记，肯定不是表头
+                if not has_chapter_mark:
                     col1_is_header_like = any(kw == col1.lower() or kw in col1.lower() for kw in pure_header_keywords)
                     col2_is_header_like = any(kw == col2.lower() or kw in col2.lower() for kw in pure_header_keywords)
 
-                    # 表头通常很短，正文第一章通常很长（>50字）
                     is_short_header = len(col1) < 10 and len(col2) < 30
 
-                    # 如果两列都像表头且很短，才认为是表头
                     if col1_is_header_like and col2_is_header_like and is_short_header:
                         is_header = True
                         logger.info(f"检测到表头行: [{col1}, {col2}]，已跳过")
@@ -82,14 +69,10 @@ class FileHandler:
                 else:
                     logger.info("未检测到表头行，保留第一行作为数据")
 
-            # 3. 🌟 修复：保留所有列，但只使用前2列，警告多余列
+
             if df.shape[1] > 2:
                 logger.warning(f"文件包含 {df.shape[1]} 列，仅使用第1-2列（标题和内容），其余列将被忽略")
-                # 可选：将多余列内容合并到第二列
-                # for col_idx in range(2, df.shape[1]):
-                #     df.iloc[:, 1] = df.iloc[:, 1].astype(str) + " " + df.iloc[:, col_idx].astype(str)
 
-            # 只取前两列，但保留原始DataFrame结构
             df = df.iloc[:, :2].copy()
 
             # 4. 填充空值
@@ -113,6 +96,7 @@ class FileHandler:
             return pd.DataFrame()
 
     @staticmethod
+    @st.cache_data(show_spinner=False)
     def export_to_csv(df: pd.DataFrame) -> bytes:
         """导出 DataFrame 为 CSV 字节流"""
         if df is None or df.empty:
@@ -120,6 +104,7 @@ class FileHandler:
         return df.to_csv(index=False).encode('utf-8-sig')
 
     @staticmethod
+    @st.cache_data(show_spinner=False)
     def export_to_excel(results: Dict[str, pd.DataFrame]) -> bytes:
         """导出分集结果字典为多 Sheet Excel"""
         if not results:
@@ -127,27 +112,22 @@ class FileHandler:
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # 🌟 修复：更安全的排序键处理
             def extract_sort_key(x):
                 match = re.search(r'\d+', str(x))
-                return int(match.group()) if match else float('inf')  # 无数字的放最后
+                return int(match.group()) if match else float('inf')
 
             keys = sorted(results.keys(), key=extract_sort_key)
 
             for key in keys:
                 df = results[key]
                 if isinstance(df, pd.DataFrame) and not df.empty:
-                    # 处理 Sheet 名称长度限制（最大31字符）
                     sheet_name = str(key)[:31]
-                    # 移除非法字符
                     for char in ['[', ']', ':', '*', '?', '/', '\\', '\'', '"']:
                         sheet_name = sheet_name.replace(char, '_')
 
-                    # 确保不以单引号开头（Excel限制）
                     if sheet_name.startswith("'"):
                         sheet_name = "_" + sheet_name[1:]
 
-                    # 确保不为空
                     if not sheet_name:
                         sheet_name = "Sheet"
 
@@ -155,7 +135,6 @@ class FileHandler:
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
                     except Exception as e:
                         logger.error(f"导出Sheet {key} 失败: {e}")
-                        # 使用简化名称重试
                         df.to_excel(writer, sheet_name=f"Sheet_{keys.index(key)}", index=False)
 
         return output.getvalue()

@@ -4,9 +4,9 @@
 import logging
 import sys
 
-# Streamlit 页面配置
+# Streamlit页面配置
 PAGE_CONFIG = {
-    "page_title": "ScriptMaster - AI 分镜工坊",
+    "page_title": "AI小说分镜生成器",
     "page_icon": "🎬",
     "layout": "wide"
 }
@@ -18,53 +18,18 @@ CUSTOM_CSS = """
    爱马仕橙主题 - Hermès Orange Theme
    ============================================================ */
 
+/* --- 全局背景 & 文字 --- */
 .stApp {
-    background: linear-gradient(180deg, #FFF9F0 0%, #FFF5E6 100%) !important;
-    color: #4A4543 !important;
+    background: linear-gradient(180deg, #FFF9F0 0%, #FFF5E6 100%);
+    /* 极速淡入动画，消灭组件加载时间差带来的闪烁感 */
+    animation: fadeInSmooth 0.4s ease-out forwards;
 }
 
-/* --- 侧边栏 --- */
-[data-testid="stSidebar"] {
-    min-width: 320px !important;
-    max-width: 320px !important;
-    width: 320px !important;
-    flex: 0 0 320px !important;
-    background: linear-gradient(180deg, #FFF5E6 0%, #FFEDD0 100%) !important;
-    border-right: 2px solid #E8C87A !important;
+/* 定义淡入关键帧 */
+@keyframes fadeInSmooth {
+    0% { opacity: 0; transform: translateY(5px); }
+    100% { opacity: 1; transform: translateY(0); }
 }
-
-/* 🌟 修复：强制固定侧边栏容器宽度 */
-section[data-testid="stSidebar"] {
-    min-width: 320px !important;
-    max-width: 320px !important;
-    width: 320px !important;
-    flex: 0 0 320px !important;
-}
-
-/* 🌟 修复：确保侧边栏在展开/折叠状态下都保持固定宽度 */
-[data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
-    width: 320px !important;
-}
-
-[data-testid="stSidebar"][aria-expanded="false"] > div:first-child {
-    width: 320px !important;
-    margin-left: -320px !important;
-}
-
-/* 🌟 修复：确保主内容区布局稳定，不受侧边栏影响 */
-.main .block-container {
-    max-width: 100% !important;
-    width: 100% !important;
-    padding-left: 2rem !important;
-    padding-right: 2rem !important;
-}
-
-/* 🌟 修复：强制主内容区自适应剩余空间 */
-.main {
-    flex: 1 !important;
-    min-width: 0 !important;
-}
-
 
 /* --- 顶部品牌 Banner --- */
 .hermes-banner {
@@ -194,7 +159,6 @@ section[data-testid="stSidebar"] {
     box-shadow: 0 0 0 2px rgba(227,112,13,0.15) !important;
 }
 
-
 /* --- Tabs 标签页 --- */
 .stTabs [data-baseweb="tab-list"] {
     gap: 4px;
@@ -280,6 +244,19 @@ section[data-testid="stSidebar"] {
     background: #FFF9F0;
 }
 
+/* --- 侧边栏 --- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #FFF5E6 0%, #FFEDD0 100%) !important;
+    border-right: 2px solid #E8C87A !important;
+}
+[data-testid="stSidebar"] [data-testid="stHeader"] {
+    background: transparent !important;
+}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #E3700D !important;
+}
 
 /* --- Divider 分隔线 → 橙色 --- */
 hr {
@@ -377,31 +354,29 @@ hr {
     width: 6px;
     height: 6px;
 }
-
+::-webkit-scrollbar-track {
+    background: #FFF5E6;
+}
 ::-webkit-scrollbar-thumb {
     background: #E8C87A;
     border-radius: 3px;
 }
-
-::-webkit-scrollbar-track {
-    background: #FFF9F0;
+::-webkit-scrollbar-thumb:hover {
+    background: #C68A1E;
 }
 
 /* --- 高亮选中文字 --- */
-::-moz-selection {
-    background: rgba(227,112,13,0.25);
-    color: #2C2A29;
-}
-
 ::selection {
     background: rgba(227,112,13,0.25);
     color: #2C2A29;
 }
 </style>
-
 """
+# 🌟 新增：模式名称常量，避免硬编码耦合
+NOVEL_MODE_NAME = "小说智能分镜脚本模式 (动态集数)"
+SCRIPT_MODE_NAME = "剧本创作模式"
 
-# 全局网络超时配置 (单位: 秒)
+# 🌟 新增：全局网络超时配置 (单位: 秒)
 # connect_timeout: 连接服务器超时时间
 # read_timeout: 等待 AI 生成内容的超时时间
 NETWORK_TIMEOUT = (60, 120)
@@ -421,24 +396,13 @@ API_BASE_URLS = {
     "自定义三方Gemini": "https://aigateway.edgecloudapp.com/v1/5087eed27d04cd00349d210e10fe620e/gemini-redbird",
     "OpenRouter": "https://openrouter.ai/api/v1",
     "阿里云通义千问": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "Google Gemini (OpenAI 兼容)": "https://generativelanguage.googleapis.com/v1beta/openai/"
+    "Google Gemini (OpenAI兼容)": "https://generativelanguage.googleapis.com/v1beta/openai/"
 }
 
-# 🌟 新增：模式名称常量，避免硬编码耦合
-NOVEL_MODE_NAME = "小说智能分镜脚本模式 (动态集数)"
-SCRIPT_MODE_NAME = "剧本创作模式"
 
-
-def setup_logger(name: str = "ScriptMaster", level: int = logging.INFO) -> logging.Logger:
+def setup_logger(name: str = "XiaoShuoFenjing", level: int = logging.INFO) -> logging.Logger:
     """
     配置并返回logger实例
-
-    Args:
-        name: logger名称
-        level: 日志级别
-
-    Returns:
-        Logger实例
     """
     logger = logging.getLogger(name)
 

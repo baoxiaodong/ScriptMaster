@@ -256,8 +256,3 @@ class PromptTemplates:
        [分集大纲]
        {outline}
        """
-
-    @classmethod
-    def get_novel_prompt(cls, content: str) -> str:
-        """获取小说模式Prompt"""
-        return cls.NOVEL_MODE_PROMPT.format(content=content)

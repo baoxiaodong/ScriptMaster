@@ -262,9 +262,6 @@ class LLMService:
 
         logger.info(f"🚀 [网络请求] 正在向三方 Gemini ({self.model_name}) 发送请求...")
         logger.info("⏳ 这个过程可能需要 30-60 秒，请耐心盯着控制台！")
-        # 🚀 发送前打印
-        print(f"\n🚀 [网络请求] 正在向三方 Gemini ({self.model_name}) 发送请求...")
-        print("⏳ 这个过程可能需要 30-60 秒，请耐心等待它打印出响应内容！")
         # 发起 API 请求
         try:
             # 发起 API 请求
