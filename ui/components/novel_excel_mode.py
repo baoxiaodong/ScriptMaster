@@ -5,7 +5,7 @@ import io
 import logging
 import re
 import time
-
+import math
 import streamlit as st
 
 from core.processor import NovelModeProcessor
@@ -245,14 +245,28 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
     logger.info(f"🚀 开始生成 {total_episodes} 集大纲")
     processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
 
-    # 🌟 修复：加回大纲的预估时间计算
-    estimated_time = "1-2分钟" if total_episodes <= 20 else ("2-3分钟" if total_episodes <= 50 else "3-5分钟")
-    progress_bar = st.progress(0, text=f"🚀 正在分析原著，构思 {total_episodes} 集大纲（预计 {estimated_time}）...")
+    # 🌟 1. 自动计算大纲预计时间
+    full_text = processor._combine_chapters(df)
+    text_length = len(full_text)
+    MAX_CHUNK_SIZE = 30000
+    if text_length <= MAX_CHUNK_SIZE:
+        est_min = "1-2"
+    else:
+        chunk_count = text_length // MAX_CHUNK_SIZE + 1
+        est_min = str(max(2, (chunk_count * 40 // 5 + 340) // 60))
+
+    base_text = f"🚀 正在分析原著，构思 {total_episodes} 集大纲（预计 {est_min} 分钟）..."
+    progress_bar = st.progress(0, text=base_text)
+
     try:
         with st.spinner():
-            outline_text = processor.generate_outline(df, on_progress=lambda msg, val: progress_bar.progress(
-                5 + int(val * 0.15), text=msg
-            ))
+            # 🌟 2. 拦截器：不管底层发什么进度文本，强行在屁股后面加上预计时间！
+            def outline_progress(msg, val):
+                display_msg = msg if "预计" in msg else f"{msg}（预计 {est_min} 分钟）"
+                progress_bar.progress(5 + int(val * 0.15), text=display_msg)
+
+            outline_text = processor.generate_outline(df, on_progress=outline_progress)
+
         st.session_state.novel_outline = outline_text
         progress_bar.progress(1.0, text=f"✅ 大纲生成完成")
         st.session_state.novel_is_generating = False
@@ -268,16 +282,24 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
     logger.info(f"🎬 开始生成 {total_episodes} 集分镜")
     processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
 
-    # 🌟 修复：加回分镜多线程的预估时间计算
-    min_minutes = max(2, total_episodes // 10)
-    max_minutes = max(3, (total_episodes + 5) // 8)
-    estimated_minutes = f"{min_minutes}-{max_minutes}"
-    progress_bar = st.progress(0,
-                               text=f"🚀 多线程引擎启动，准备生成 {total_episodes} 集分镜（预计 {estimated_minutes} 分钟）...")
+    # 🌟 1. 自动计算分镜多线程预计时间
+    import math
+    rounds = math.ceil(total_episodes / 9)
+    min_minutes = max(2, rounds * 2)
+    max_minutes = min_minutes + 2
+    est_min = f"{min_minutes}-{max_minutes}"
+
+    base_text = f"🚀 多线程引擎启动，准备生成 {total_episodes} 集分镜（预计 {est_min} 分钟）..."
+    progress_bar = st.progress(0, text=base_text)
+
     try:
-        results = processor.process(df, on_progress=lambda msg, val: progress_bar.progress(
-            5 + int(val * 0.95), text=msg
-        ))
+        # 🌟 2. 拦截器：强行给多线程进度加上时间尾巴！
+        def script_progress(msg, val):
+            display_msg = msg if "预计" in msg else f"{msg}（预计 {est_min} 分钟）"
+            progress_bar.progress(5 + int(val * 0.95), text=display_msg)
+
+        results = processor.process(df, on_progress=script_progress)
+
         st.session_state.novel_results = results
         StateManager.set_results(results)
         progress_bar.progress(1.0, text="✅ 全部生成完成")
