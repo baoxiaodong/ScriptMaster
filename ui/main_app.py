@@ -13,6 +13,7 @@ from ui.components.sidebar import render_sidebar
 from utils.error_handler import error_handler
 from utils.file_handler import FileHandler
 from utils.state_manager import StateManager
+from ui.components.prompt_studio import render_prompt_studio
 
 # 🌟 日志器配置
 logger = setup_logger("ScriptMaster")
@@ -65,7 +66,7 @@ def main():
 
     current_mode = st.radio(
         "切换模式",
-        [NOVEL_MODE_NAME, SCRIPT_MODE_NAME],
+        [NOVEL_MODE_NAME, SCRIPT_MODE_NAME,"🧠 提示词调优工坊"],
         label_visibility="collapsed",
         horizontal=True,
         key="app_mode_selector"
@@ -87,9 +88,15 @@ def main():
         if current_mode == NOVEL_MODE_NAME:
             logger.info("📂 [Render] 正在载入: 小说Excel模式组件")
             render_novel_excel_mode(llm_service, file_handler)
-        else:
+
+        elif current_mode == SCRIPT_MODE_NAME:
             logger.info("✍️ [Render] 正在载入: 剧本全流程模式组件")
             render_script_generation_mode(llm_service)
+
+        # 👇 核心修改：增加调优工坊的渲染分支
+        elif current_mode == "🧠 提示词调优工坊":
+            logger.info("🧠 [Render] 正在载入: 提示词调优工坊")
+            render_prompt_studio()
 
         render_duration = time.time() - render_start
         if render_duration > 0.5:
