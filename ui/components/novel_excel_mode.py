@@ -130,11 +130,10 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
 
             # 新增：大纲展示区域（只在大纲生成完成后、分镜生成前显示）
             if (selected_df is not None and
-                st.session_state.novel_outline and
-                not st.session_state.novel_results and
-                not st.session_state.novel_is_generating):
+                    st.session_state.novel_outline and
+                    not st.session_state.novel_results and
+                    not st.session_state.novel_is_generating):
                 render_novel_outline_section(llm_service, selected_df, total_episodes)
-
 
             results = st.session_state.novel_results
             if results:
@@ -172,7 +171,14 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
     """渲染小说大纲展示区域（可编辑 + Word 导出 + 确认生成分镜）"""
     if not st.session_state.novel_outline:
         return
-
+    # 🌟 新增：如果大纲生成失败，显示重试按钮
+    if st.session_state.novel_outline.startswith("❌"):
+        st.error(st.session_state.novel_outline)
+        if st.button("🔄 重新生成大纲", type="primary", width='stretch'):
+            st.session_state.novel_outline = None
+            st.session_state.novel_is_generating = True
+            st.rerun()
+        return
     st.divider()
     st.markdown("**📖 分集大纲预览**")
 
@@ -240,6 +246,7 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
                 st.session_state.novel_is_generating = True
                 st.rerun()  # ✅ 立即刷新页面
     st.divider()
+
 
 def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
     """只生成大纲，生成分镜由用户确认后触发"""

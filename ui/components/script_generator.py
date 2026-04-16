@@ -452,10 +452,17 @@ def render_step_3_scripts(llm_service):
 
         # 🌟 初始化处理器
         if 'script_processor' not in st.session_state:
-            processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-            processor.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
-            processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
-            st.session_state.script_processor = processor
+            try:
+                processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
+                processor.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
+                processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
+                st.session_state.script_processor = processor
+                logger.info("✅ [ScriptStep3] 处理器初始化成功")
+            except Exception as e:
+                st.error(f"❌ 处理器初始化失败：{str(e)[:80]}")
+                logger.error(f"❌ [ScriptStep3] 处理器初始化失败: {str(e)}", exc_info=True)
+                st.session_state.script_is_generating = False
+                return
 
         # 步骤 1: 渲染按钮区域
         if st.session_state.script_is_generating:
@@ -481,17 +488,19 @@ def render_step_3_scripts(llm_service):
         if st.session_state.script_is_generating and not st.session_state.scripts:
             _execute_step3_generation(total_episodes)
 
-        # 🌟 补全逻辑 - 优化: 全部成功时不显示按钮
-        if results:
-            error_keys = [k for k, v in results.items() if isinstance(v, str) and v.startswith("❌")]
-
-            # 只有存在错误集数时才显示补全按钮
+        # 🌟 改成异步流程（与小说模式一致）
+        if st.session_state.script_is_generating and st.session_state.scripts:
+            error_keys = [k for k, v in st.session_state.scripts.items() if isinstance(v, str) and v.startswith("❌")]
+            if error_keys:
+                _execute_step3_retry(st.session_state.scripts)
+        elif st.session_state.scripts:
+            error_keys = [k for k, v in st.session_state.scripts.items() if isinstance(v, str) and v.startswith("❌")]
             if error_keys and not st.session_state.get('script_is_generating', False):
                 retry_label = f"🔄 补全缺失集数 ({len(error_keys)}集)"
-
                 if st.button(retry_label, width='stretch'):
                     st.session_state.script_is_generating = True
-                    _execute_step3_retry(results)
+                    st.rerun()
+
 
     except Exception as e:
         st.error(f"❌ 第三步加载异常: {str(e)[:60]}")

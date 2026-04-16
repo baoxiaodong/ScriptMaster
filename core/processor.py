@@ -87,7 +87,7 @@ class NovelModeProcessor:
         total_chunks = len(chunks)
 
         # 🌟 计算总预计时间（并行处理，5个并发同时跑，每段约 40 秒）
-        estimated_total_minutes = max(2, (total_chunks * 40 // 5 + 60) // 60)
+        estimated_total_minutes = max(2, (total_chunks * 40 // 5 + 340) // 60)
 
         summaries = [None] * total_chunks
         progress_lock = Lock()
