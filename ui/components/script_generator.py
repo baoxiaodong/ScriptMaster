@@ -154,7 +154,8 @@ def _render_step1_editor(current_act: str, acts_list: list):
             "构架内容（可直接修改）：",
             value=current_act,
             height=400,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            disabled=st.session_state.get('script_is_generating', False)
         )
 
         if st.button("💾 保存修改", width='stretch'):
@@ -178,7 +179,8 @@ def render_step_1_acts(llm_service):
         default_idea = """Resolution: Low《低画质人生》
 2099年，视觉感知成为一种昂贵的订阅服务。富人享受着8K HDR的极致世界，而像凯这样的穷人只能活在"经济模式"里--一个模糊、像素化的144p噩梦。凯为了看清病危母亲的脸，在黑市购买了违禁芯片，结果发现"高清"世界里，统治者其实是食人怪物，而"低画质"只是为了掩盖真相的滤镜。"""
 
-        original_idea = st.text_area("请输入原始创意：", value=default_idea, height=150)
+        original_idea = st.text_area("请输入原始创意：", value=default_idea, height=150,
+                                     disabled=st.session_state.get('script_is_generating', False))
 
         api_ready = st.session_state.get("api_validated", False)
 
@@ -317,7 +319,9 @@ def _render_step2_editor_and_export():
             "大纲内容（可直接修改）：",
             value=st.session_state.outline,
             height=400,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            disabled=st.session_state.get('script_is_generating', False)
+
         )
 
         if edited_outline != st.session_state.outline:
@@ -356,7 +360,7 @@ def render_step_2_outline(llm_service):
         total_episodes = st.session_state.get('script_total_episodes', 30)
         batch_count = (total_episodes + 2) // 3
 
-        # 🌟 步骤 1: 渲染按钮区域
+        # 步骤 1: 渲染按钮区域
         if not st.session_state.outline:
             _render_step2_buttons(
                 st.session_state.get("api_validated", False),
@@ -364,7 +368,8 @@ def render_step_2_outline(llm_service):
                 batch_count
             )
         else:
-            # 大纲已生成，显示清除按钮
+            # 大纲已生成，只显示清除按钮（不重复显示标题）
+            st.markdown("**⚙️ 大纲管理**")
             if st.button("🗑️ 清除大纲并重新生成", width='stretch',
                          disabled=st.session_state.get('script_is_generating', False)):
                 st.session_state.outline = None
@@ -452,8 +457,11 @@ def render_step_3_scripts(llm_service):
             processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
             st.session_state.script_processor = processor
 
-        # 🌟 步骤 1: 渲染按钮区域
-        if not results:
+        # 步骤 1: 渲染按钮区域
+        if st.session_state.script_is_generating:
+            # 生成中：显示提示
+            st.info("⏳ 正在批量生成分镜，请稍候...")
+        elif not results:
             api_ready = st.session_state.get("api_validated", False)
             if not api_ready:
                 st.warning("⚠️ 请在侧边栏验证 API 配置")

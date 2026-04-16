@@ -92,6 +92,7 @@ def render_sidebar(llm_service: LLMService):
                                     st.success("✅ API Key 验证通过！模型连接正常")
                                     st.session_state["api_validated"] = True
                                     st.session_state.api_key_value = api_key
+                                    st.rerun()
                             except Exception as e:
                                 st.error("❌ 连接异常：" + str(e)[:80])
 

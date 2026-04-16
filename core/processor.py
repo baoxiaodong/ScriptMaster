@@ -33,7 +33,7 @@ class NovelModeProcessor:
         if on_progress:
             # 🌟 根据文本长度动态显示提示语
             if text_length > 50000:
-                progress_text = f" 正在生成{self.total_episodes}集分集大纲（小说长度{text_length:,}字，内容较长请耐心等待）..."
+                progress_text = f"🚀 正在生成{self.total_episodes}集分集大纲（小说长度{text_length:,}字，内容较长请耐心等待）..."
             else:
                 progress_text = f"🚀 正在生成{self.total_episodes}集分集大纲..."
             on_progress(progress_text, 0)
@@ -258,7 +258,7 @@ class NovelModeProcessor:
 
         def _worker(start, end):
             # 🚀 新增：确认线程是否启动
-            print(f"\n▶️ [线程启动] 正在接单：开始处理第 {start}-{end} 集的内容...")
+            logger.info(f"\n▶️ [线程启动] 正在接单：开始处理第 {start}-{end} 集的内容...")
             # 梯度错峰启动 0.5 秒
             time.sleep((start // EPISODES_PER_BATCH) * 0.5)
 

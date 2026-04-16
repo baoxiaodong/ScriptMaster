@@ -1,12 +1,15 @@
 """
 文件上传组件模块
 """
+import io
 import pandas as pd
 import streamlit as st
 import logging
 from utils.file_handler import FileHandler
 
 logger = logging.getLogger("ScriptMaster.FileUpload")
+
+
 def validate_file_content(df: pd.DataFrame) -> tuple:
     try:
         if df.empty:
@@ -129,14 +132,9 @@ def _hide_streamlit_file_uploader_text():
 def render_file_uploader():
     """
     渲染文件上传组件
-
-    Returns:
-        上传的文件对象或None
     """
-    # 注入 CSS 样式，将英文改为中文
     _hide_streamlit_file_uploader_text()
 
-    # 添加中文使用说明卡片
     st.markdown("""
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                     padding: 20px; 
@@ -176,8 +174,12 @@ def render_file_uploader():
         label_visibility="collapsed"
     )
 
-    # 文件类型二次校验
+    # 将上传的文件保存到 session_state，防止验证 API 刷新页面时丢失
     if uploaded_file is not None:
+        # 缓存文件内容和完整文件名
+        st.session_state.uploaded_file_content = uploaded_file.getvalue()
+        st.session_state.uploaded_file_name_full = uploaded_file.name
+
         file_name = uploaded_file.name
         file_extension = file_name.split('.')[-1].lower()
         allowed_extensions = ['xlsx', 'xls', 'csv']
@@ -192,12 +194,20 @@ def render_file_uploader():
                 "• 请检查文件扩展名是否正确"
             )
             return None
-        # 保存文件名到 session_state
+
+        # 保存文件名到 session_state (去除后缀，保持原有逻辑兼容)
         st.session_state.uploaded_file_name = file_name.rsplit('.', 1)[0]
         st.success(f"✅ 已选择文件: {file_name}")
         st.info("💡 下一步：设置总集数 → 点击「开始生成」")
+        return uploaded_file
 
-    return uploaded_file
+    # 🌟 如果上传器丢失文件，但 session_state 中有缓存，则自动恢复
+    elif st.session_state.get("uploaded_file_content") is not None:
+        recovered_file = io.BytesIO(st.session_state.uploaded_file_content)
+        recovered_file.name = st.session_state.uploaded_file_name_full
+        return recovered_file
+
+    return None
 
 
 # ... existing code ...

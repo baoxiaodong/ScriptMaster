@@ -2,7 +2,7 @@
 全局错误处理配置 - 统一管理错误类型、样式和提示信息
 便于维护和扩展
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List
 
 

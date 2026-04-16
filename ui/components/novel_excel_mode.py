@@ -1,6 +1,5 @@
 """
-小说Excel分镜生成组件 - 纯净版
-彻底移除所有 DEBUG 输出、结果统计和冗余 UI 元素
+小说Excel分镜生成组件
 """
 import io
 import logging
@@ -38,8 +37,8 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
 
         df = file_handler.read_file(uploaded_file)
         if df is not None and not df.empty:
-            # 未生成结果时显示预览和选择器
-            if not st.session_state.novel_results:
+            # 未生成结果且未在生成中时显示预览和选择器
+            if not st.session_state.novel_results and not st.session_state.novel_is_generating:
                 render_data_preview(df)
                 selected_indices = render_chapter_selector(df)
                 selected_df = df.iloc[selected_indices] if selected_indices else df
@@ -47,15 +46,15 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                 selected_df = df
 
             st.divider()
-            # 🌟 新增：集数配置输入框
-            st.markdown("**⚙️ 生成配置**")
 
             if st.session_state.novel_is_generating:
-                # 生成中：显示全宽进度条和警告
-                st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
-                st.progress(0.1, text="正在执行任务...")
+                #  生成中：只显示警告，隐藏所有输入框和按钮
+                st.warning("️ 生成过程中无法中断，如需停止请刷新浏览器页面")
             else:
-                # 未生成：显示两列配置
+                #  未生成：显示配置标题、输入框和按钮
+                st.markdown("**⚙️ 生成配置**")
+
+                #  显示两列配置
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     total_episodes = st.number_input(
@@ -67,26 +66,24 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                         help="设置要生成的分镜总集数（系统将按每 3 集一批并行处理）"
                     )
                     st.session_state.total_episodes = total_episodes
-                    with col2:
-                        # 显示批次信息
-                        batch_count = (total_episodes + 2) // 3
-                        st.markdown(
-                            f"""
-                                   <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; text-align: center;">
-                                       <p style="margin: 0; font-size: 14px;">
-                                           📦 分 <b>{batch_count} 次</b> 生成<br>
-                                           <span style="color: #666; font-size: 12px;">每次同时处理 3 集 | 共{total_episodes}集</span>
-                                       </p>
-                                   </div>
-                                   """,
-                            unsafe_allow_html=True
-                        )
+                with col2:
+                    batch_count = (total_episodes + 2) // 3
+                    st.markdown(
+                        f"""
+                                               <div style="background-color: #e8f4fd; padding: 10px; border-radius: 5px; text-align: center;">
+                                                   <p style="margin: 0; font-size: 14px;">
+                                                       分 <b>{batch_count} 次</b> 生成<br>
+                                                       <span style="color: #666; font-size: 12px;">每次同时处理 3 集 | 共{total_episodes}集</span>
+                                                   </p>
+                                               </div>
+                                               """,
+                        unsafe_allow_html=True
+                    )
 
-                # 🌟 修复：将按钮逻辑移出 col2，使其在配置栏下方正常显示
                 api_ready = st.session_state.get("api_validated", False)
                 if not st.session_state.novel_results and not st.session_state.novel_outline:
                     if not api_ready:
-                        st.warning("⚠️ 请在侧边栏验证 API 配置")
+                        st.warning("️ 请在侧边栏验证 API 配置")
                         st.button("🚀 开始生成", disabled=True)
                     else:
                         if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary",
@@ -106,52 +103,61 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
             if 'total_episodes' not in locals():
                 total_episodes = 20
 
-            # 🌟 修复1: 检查状态并执行生成大纲逻辑
-        if st.session_state.novel_is_generating and not st.session_state.novel_outline:
-            if selected_df is not None:
-                _execute_generation_flow(llm_service, selected_df, total_episodes)
+            #  检查状态并执行生成大纲逻辑
+            if st.session_state.novel_is_generating and not st.session_state.novel_outline:
+                if selected_df is not None:
+                    _execute_generation_flow(llm_service, selected_df, total_episodes)
+
+            # 🌟 新增：从大纲生成分镜逻辑
+            elif st.session_state.novel_is_generating and st.session_state.novel_outline and not st.session_state.novel_results:
+                if selected_df is not None:
+                    _execute_scripts_generation(llm_service, selected_df, total_episodes)
 
             # 🌟 修复2: 检查状态并执行补全逻辑
-        if st.session_state.novel_is_generating and st.session_state.novel_results:
-            error_keys = []
-            sorted_results = _sort_and_clean_results(st.session_state.novel_results)
-            for k, v in sorted_results.items():
-                if isinstance(v, str) and v.startswith("❌"):
-                    error_keys.append(k)
-                elif hasattr(v, 'empty') and v.empty:
-                    error_keys.append(k)
-                elif hasattr(v, '__len__') and len(v) < 20:
-                    error_keys.append(k)
+            if st.session_state.novel_is_generating and st.session_state.novel_results:
+                error_keys = []
+                sorted_results = _sort_and_clean_results(st.session_state.novel_results)
+                for k, v in sorted_results.items():
+                    if isinstance(v, str) and v.startswith("❌"):
+                        error_keys.append(k)
+                    elif hasattr(v, 'empty') and v.empty:
+                        error_keys.append(k)
+                    elif hasattr(v, '__len__') and len(v) < 20:
+                        error_keys.append(k)
 
-            if error_keys and selected_df is not None:
-                _execute_retry_flow(llm_service, selected_df, error_keys, sorted_results)
+                if error_keys and selected_df is not None:
+                    _execute_retry_flow(llm_service, selected_df, error_keys, sorted_results)
 
-            # 🌟 新增：大纲展示区域
-        if selected_df is not None:
-            render_novel_outline_section(llm_service, selected_df, total_episodes)
+            # 新增：大纲展示区域（只在大纲生成完成后、分镜生成前显示）
+            if (selected_df is not None and
+                st.session_state.novel_outline and
+                not st.session_state.novel_results and
+                not st.session_state.novel_is_generating):
+                render_novel_outline_section(llm_service, selected_df, total_episodes)
 
-        results = st.session_state.novel_results
-        if results:
-            sorted_results = _sort_and_clean_results(results)
-            render_results(sorted_results)
 
-            # 🌟 始终显示补全按钮，没有错误时灰化
-            error_keys = []
-            for k, v in sorted_results.items():
-                if isinstance(v, str) and v.startswith("❌"):
-                    error_keys.append(k)
-                elif hasattr(v, 'empty') and v.empty:
-                    error_keys.append(k)
-                elif hasattr(v, '__len__') and len(v) < 20:
-                    error_keys.append(k)
+            results = st.session_state.novel_results
+            if results:
+                sorted_results = _sort_and_clean_results(results)
+                render_results(sorted_results)
 
-            retry_disabled = not error_keys or st.session_state.novel_is_generating
-            retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，无需补全"
+                # 🌟 始终显示补全按钮，没有错误时灰化
+                error_keys = []
+                for k, v in sorted_results.items():
+                    if isinstance(v, str) and v.startswith("❌"):
+                        error_keys.append(k)
+                    elif hasattr(v, 'empty') and v.empty:
+                        error_keys.append(k)
+                    elif hasattr(v, '__len__') and len(v) < 20:
+                        error_keys.append(k)
 
-            if st.button(retry_label, width='stretch', disabled=retry_disabled,
-                         key=f"btn_retry_novel_{len(error_keys)}"):
-                st.session_state.novel_is_generating = True
-                st.rerun()  # ✅ 修复2: 改为 rerun 模式
+                retry_disabled = not error_keys or st.session_state.novel_is_generating
+                retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，无需补全"
+
+                if st.button(retry_label, width='stretch', disabled=retry_disabled,
+                             key=f"btn_retry_novel_{len(error_keys)}"):
+                    st.session_state.novel_is_generating = True
+                    st.rerun()
 
     except Exception as e:
         # 🛡️ 使用全局错误处理器
@@ -168,27 +174,30 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
         return
 
     st.divider()
-    st.markdown("### 📖 分集大纲预览")
+    st.markdown("**📖 分集大纲预览**")
 
     base_name = st.session_state.get('uploaded_file_name', '小说')
 
-    with st.expander("📋 点击编辑大纲", expanded=True):
+    # 🌟 生成过程中，大纲区域默认折叠
+    with st.expander("📋 点击编辑大纲", expanded=not st.session_state.novel_is_generating):
         # 🌟 可编辑的大纲文本框
         edited_outline = st.text_area(
             "大纲内容（可直接修改）：",
             value=st.session_state.novel_outline,
             height=400,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            disabled=st.session_state.novel_is_generating
         )
 
-        # 🌟 保存修改按钮
-        if edited_outline != st.session_state.novel_outline:
-            if st.button("💾 保存修改", width='stretch'):
-                st.session_state.novel_outline = edited_outline
-                st.success("✅ 大纲已保存")
-                st.rerun()
+        # 🌟 保存修改按钮（生成过程中不显示）
+        if not st.session_state.novel_is_generating:
+            if edited_outline != st.session_state.novel_outline:
+                if st.button("💾 保存修改", width='stretch'):
+                    st.session_state.novel_outline = edited_outline
+                    st.success("✅ 大纲已保存")
+                    st.rerun()
 
-        # 🌟 Word 导出（始终显示，不管有没有修改）
+        # 🌟 Word 导出（始终显示，生成过程中禁用）
         try:
             from docx import Document
             from docx.shared import Pt
@@ -219,18 +228,18 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
                 data=output.getvalue(),
                 file_name=f"{base_name}_分集大纲.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                width='stretch'
+                width='stretch',
+                disabled=st.session_state.novel_is_generating  # 🌟 生成过程中禁用
             )
         except Exception as e:
             st.error(f"❌ Word 导出失败: {str(e)[:100]}")
 
-        # 🌟 确认并生成分镜按钮
-        if st.button("🎬 确认大纲，开始生成分镜", type="primary", width='stretch',
-                     disabled=st.session_state.novel_is_generating):
-            st.session_state.novel_is_generating = True
-            st.rerun()  # ✅ 立即刷新页面
+        # 🌟 确认并生成分镜按钮（生成过程中隐藏）
+        if not st.session_state.novel_is_generating:
+            if st.button("🎬 确认大纲，开始生成分镜", type="primary", width='stretch'):
+                st.session_state.novel_is_generating = True
+                st.rerun()  # ✅ 立即刷新页面
     st.divider()
-
 
 def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
     """只生成大纲，生成分镜由用户确认后触发"""
@@ -286,7 +295,6 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
     # 🌟 在外部显示进度条，不在大纲区域内
     st.divider()
     st.markdown("### 🎬 正在生成分镜脚本")
-    st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
 
     progress_bar = st.progress(0, text=f"🚀 准备生成 {total_episodes} 集分镜...")
 

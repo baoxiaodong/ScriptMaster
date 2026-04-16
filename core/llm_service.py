@@ -115,6 +115,8 @@ class LLMService:
         if self.provider == "Mock (演示)":
             return self._mock_generate(system_prompt, user_prompt)
 
+        logger.info(f"🚀 [LLM] 正在请求 {self.provider} ({self.model_name})...")
+
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -130,6 +132,7 @@ class LLMService:
                     temperature=0.7,
                     timeout=(60, 120)
                 )
+                logger.info(f"✅ [LLM] 请求成功，返回 {len(response.choices[0].message.content)} 字")
                 return response.choices[0].message.content.strip()
 
             except Exception as e:
