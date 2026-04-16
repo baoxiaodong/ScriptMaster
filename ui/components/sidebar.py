@@ -98,8 +98,11 @@ def render_sidebar(llm_service: LLMService):
             # 🚀 关键：在 expander 外部读取 base_url，确保它总是被定义
             base_url = API_BASE_URLS.get(provider, "")
 
-        # 更新服务配置
-        llm_service.configure(provider, api_key, model_name, base_url)
+        # 更新服务配置（🌟 优化：只在参数变化时才调用）
+        current_config = (provider, api_key, model_name, base_url)
+        if st.session_state.get('_last_llm_config') != current_config:
+            llm_service.configure(provider, api_key, model_name, base_url)
+            st.session_state._last_llm_config = current_config
 
         st.divider()
         with st.expander("📖 使用说明", expanded=False):

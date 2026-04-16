@@ -7,10 +7,6 @@ import streamlit as st
 # 1. 必须是整个脚本中第一个执行的 Streamlit 命令
 from config.settings import PAGE_CONFIG, CUSTOM_CSS, setup_logger
 
-try:
-    st.set_page_config(**PAGE_CONFIG)
-except Exception:
-    pass
 
 from ui.components.script_generator import render_script_generation_mode
 from ui.components.sidebar import render_sidebar
@@ -28,8 +24,10 @@ logger = setup_logger("ScriptMaster")
 
 def init_app():
     """初始化应用基础配置"""
-    # 注入全局 CSS
-    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    # 🌟 修复: CSS 只在首次加载时注入一次
+    if '_css_injected' not in st.session_state:
+        st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+        st.session_state._css_injected = True
 
     # 初始化业务状态（仅在会话开始时执行一次）
     if 'app_initialized' not in st.session_state:

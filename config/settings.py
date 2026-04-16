@@ -20,30 +20,51 @@ CUSTOM_CSS = """
 
 .stApp {
     background: linear-gradient(180deg, #FFF9F0 0%, #FFF5E6 100%) !important;
-    color: #4A4543 !important; /* 🚀 修复：强制全局文字为深褐色，解决白底白字 */
+    color: #4A4543 !important;
 }
 
-/* 🚀 修复：确保侧边栏文字颜色正确 */
+/* --- 侧边栏 --- */
 [data-testid="stSidebar"] {
-    color: #4A4543 !important;
+    min-width: 320px !important;
+    max-width: 320px !important;
+    width: 320px !important;
+    flex: 0 0 320px !important;
     background: linear-gradient(180deg, #FFF5E6 0%, #FFEDD0 100%) !important;
     border-right: 2px solid #E8C87A !important;
 }
 
-/* 🚀 修复：确保输入框和文本域文字颜色正确 */
-input, textarea, [data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea {
-    color: #4A4543 !important;
+/* 🌟 修复：强制固定侧边栏容器宽度 */
+section[data-testid="stSidebar"] {
+    min-width: 320px !important;
+    max-width: 320px !important;
+    width: 320px !important;
+    flex: 0 0 320px !important;
 }
 
-/* 🚀 修复：确保 Radio 选项文字颜色正确 */
-.stRadio label, .stRadio > div {
-    color: #4A4543 !important;
+/* 🌟 修复：确保侧边栏在展开/折叠状态下都保持固定宽度 */
+[data-testid="stSidebar"][aria-expanded="true"] > div:first-child {
+    width: 320px !important;
 }
 
-/* 🚀 修复：确保主内容区文字颜色正确 */
+[data-testid="stSidebar"][aria-expanded="false"] > div:first-child {
+    width: 320px !important;
+    margin-left: -320px !important;
+}
+
+/* 🌟 修复：确保主内容区布局稳定，不受侧边栏影响 */
 .main .block-container {
-    color: #4A4543 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
 }
+
+/* 🌟 修复：强制主内容区自适应剩余空间 */
+.main {
+    flex: 1 !important;
+    min-width: 0 !important;
+}
+
 
 /* --- 顶部品牌 Banner --- */
 .hermes-banner {
@@ -259,20 +280,6 @@ input, textarea, [data-testid="stTextInput"] input, [data-testid="stTextArea"] t
     background: #FFF9F0;
 }
 
-/* --- 侧边栏 --- */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #FFF5E6 0%, #FFEDD0 100%) !important;
-    border-right: 2px solid #E8C87A !important;
-}
-
-[data-testid="stSidebar"] [data-testid="stHeader"] {
-    background: transparent !important;
-}
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: #E3700D !important;
-}
 
 /* --- Divider 分隔线 → 橙色 --- */
 hr {
@@ -367,14 +374,28 @@ hr {
 
 /* --- 滚动条美化 --- */
 ::-webkit-scrollbar {
- width: 6px;
- height: 6px;
+    width: 6px;
+    height: 6px;
 }
-...
+
+::-webkit-scrollbar-thumb {
+    background: #E8C87A;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-track {
+    background: #FFF9F0;
+}
+
 /* --- 高亮选中文字 --- */
+::-moz-selection {
+    background: rgba(227,112,13,0.25);
+    color: #2C2A29;
+}
+
 ::selection {
- background: rgba(227,112,13,0.25);
- color: #2C2A29;
+    background: rgba(227,112,13,0.25);
+    color: #2C2A29;
 }
 </style>
 
