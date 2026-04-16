@@ -92,7 +92,7 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                         if st.button(f"🚀 开始生成 {total_episodes} 集内容", type="primary",
                                      width='stretch', disabled=st.session_state.novel_is_generating):
                             st.session_state.novel_is_generating = True
-                            _execute_generation_flow(llm_service, selected_df, total_episodes)
+                            st.rerun()
                 else:
                     if st.button("🗑️ 清除当前结果并重新开始",
                                  disabled=st.session_state.novel_is_generating,
@@ -101,9 +101,35 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
                         st.session_state.novel_outline = None
                         st.rerun()
 
-        # 🌟 新增：大纲展示区域
-        render_novel_outline_section(llm_service, selected_df, total_episodes)
-        # 渲染结果展示
+            if 'selected_df' not in locals():
+                selected_df = None
+            if 'total_episodes' not in locals():
+                total_episodes = 20
+
+            # 🌟 修复1: 检查状态并执行生成大纲逻辑
+        if st.session_state.novel_is_generating and not st.session_state.novel_outline:
+            if selected_df is not None:
+                _execute_generation_flow(llm_service, selected_df, total_episodes)
+
+            # 🌟 修复2: 检查状态并执行补全逻辑
+        if st.session_state.novel_is_generating and st.session_state.novel_results:
+            error_keys = []
+            sorted_results = _sort_and_clean_results(st.session_state.novel_results)
+            for k, v in sorted_results.items():
+                if isinstance(v, str) and v.startswith("❌"):
+                    error_keys.append(k)
+                elif hasattr(v, 'empty') and v.empty:
+                    error_keys.append(k)
+                elif hasattr(v, '__len__') and len(v) < 20:
+                    error_keys.append(k)
+
+            if error_keys and selected_df is not None:
+                _execute_retry_flow(llm_service, selected_df, error_keys, sorted_results)
+
+            # 🌟 新增：大纲展示区域
+        if selected_df is not None:
+            render_novel_outline_section(llm_service, selected_df, total_episodes)
+
         results = st.session_state.novel_results
         if results:
             sorted_results = _sort_and_clean_results(results)
@@ -125,7 +151,7 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
             if st.button(retry_label, width='stretch', disabled=retry_disabled,
                          key=f"btn_retry_novel_{len(error_keys)}"):
                 st.session_state.novel_is_generating = True
-                _execute_retry_flow(llm_service, selected_df, error_keys, sorted_results)
+                st.rerun()  # ✅ 修复2: 改为 rerun 模式
 
     except Exception as e:
         # 🛡️ 使用全局错误处理器
@@ -202,7 +228,7 @@ def render_novel_outline_section(llm_service, df, total_episodes: int = 20):
         if st.button("🎬 确认大纲，开始生成分镜", type="primary", width='stretch',
                      disabled=st.session_state.novel_is_generating):
             st.session_state.novel_is_generating = True
-            _execute_scripts_generation(llm_service, df, total_episodes)
+            st.rerun()  # ✅ 立即刷新页面
     st.divider()
 
 
@@ -211,15 +237,19 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
     logger.info(f"🚀 开始生成 {total_episodes} 集大纲")
 
     processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-    outline_minutes = max(1, total_episodes // 15)
-
-    st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
+    # 🌟 修复: 动态计算预计时间范围（根据集数）
+    if total_episodes <= 20:
+        estimated_time = "1-2分钟"
+    elif total_episodes <= 50:
+        estimated_time = "2-3分钟"
+    else:
+        estimated_time = "3-5分钟"
 
     progress_bar = st.progress(0, text=f"🚀 准备生成 {total_episodes} 集大纲...")
 
     try:
         logger.info("📖 生成大纲中...")
-        progress_bar.progress(5, text=f"📖 生成{total_episodes}集大纲（预计{outline_minutes}分钟）")
+        progress_bar.progress(5, text=f"📖 生成{total_episodes}集大纲（预计{estimated_time}）")
 
         with st.spinner():
             outline_text = processor.generate_outline(df, on_progress=lambda msg, val: progress_bar.progress(
@@ -230,10 +260,8 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
         st.session_state.novel_outline = outline_text
         progress_bar.progress(1.0, text=f"✅ 大纲生成完成")
         logger.info(f"📖 大纲完成 ({len(outline_text)} 字)")
-        # 🌟 新增：只有成功生成后才刷新页面
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
-        st.rerun()
     except Exception as e:
         logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
         show_inline_error(
@@ -245,18 +273,22 @@ def _execute_generation_flow(llm_service, df, total_episodes: int = 20):
         logger.info("🔄 刷新页面")
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
+        st.rerun()
 
 
 def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
-    """基于现有大纲生成分镜"""
+    """基于现有大纲生成分镜（独立显示在外部）"""
     logger.info(f"🎬 开始生成 {total_episodes} 集分镜")
 
     processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-    estimated_minutes = f"{max(2, total_episodes // 10)}-{max(3, total_episodes // 8)}"
+    estimated_minutes = f"{max(2, total_episodes // 10)}-{max(3, (total_episodes + 5) // 8)}"
 
+    # 🌟 在外部显示进度条，不在大纲区域内
+    st.divider()
+    st.markdown("### 🎬 正在生成分镜脚本")
     st.warning("⚠️ 生成过程中无法中断，如需停止请刷新浏览器页面")
 
-    progress_bar = st.progress(0, text=f" 准备生成 {total_episodes} 集分镜...")
+    progress_bar = st.progress(0, text=f"🚀 准备生成 {total_episodes} 集分镜...")
 
     try:
         logger.info("🎬 生成分镜中...")
@@ -271,10 +303,8 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
         StateManager.set_results(results)
         progress_bar.progress(1.0, text="✅ 全部生成完成")
         logger.info(f"✅ 分镜完成，共 {len(results)} 集")
-        # 🌟 新增：只有成功生成后才刷新页面
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
-        st.rerun()
     except Exception as e:
         logger.error(f"❌ 生成失败: {str(e)}", exc_info=True)
         show_inline_error(
@@ -286,6 +316,7 @@ def _execute_scripts_generation(llm_service, df, total_episodes: int = 20):
         logger.info("🔄 刷新页面")
         st.session_state.novel_is_generating = False
         time.sleep(0.5)
+        st.rerun()
 
 
 def _execute_retry_flow(llm_service, df, error_keys, existing_results):
