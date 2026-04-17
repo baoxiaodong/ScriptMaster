@@ -10,7 +10,7 @@ import zipfile
 import pandas as pd
 import streamlit as st
 from core.processor import NovelModeProcessor
-from core.prompts import PromptTemplates
+from core.prompt_manager import PromptManager, PromptKeys
 
 logger = logging.getLogger("ScriptMaster.ScriptGenerator")
 
@@ -77,7 +77,7 @@ def _render_step1_buttons(api_ready: bool):
 
 def _execute_step1_generation(llm_service, original_idea: str):
     full_response = ""
-    prompt = PromptTemplates.ACT_GEN_TASK.format(original_idea=original_idea)
+    prompt = PromptManager.get(PromptKeys.ACT_GEN_TASK).format(original_idea=original_idea)
     placeholder = st.empty()
 
     idea_length = len(original_idea)
@@ -90,7 +90,8 @@ def _execute_step1_generation(llm_service, original_idea: str):
 
     try:
         with st.spinner(f"🤖 AI 编剧正在构思剧情（预计{estimated_time}）..."):
-            for chunk in llm_service.generate_stream("你是一个专业编剧，擅长爆款短剧设定。", prompt):
+            system_p = PromptManager.get(PromptKeys.ACT_GEN_SYSTEM)
+            for chunk in llm_service.generate_stream(system_p, prompt):
                 full_response += chunk
                 placeholder.markdown(full_response + "▌")
 
@@ -226,12 +227,13 @@ def _execute_step2_generation(llm_service, source_act: str):
     else:
         estimated_time = "3-5分钟" if source_length < 500 else "5-8分钟"
 
-    prompt = PromptTemplates.OUTLINE_TASK.format(user_choice=source_act, total_episodes=total_episodes)
+    prompt = PromptManager.get(PromptKeys.OUTLINE_TASK).format(user_choice=source_act, total_episodes=total_episodes)
     placeholder = st.empty()
 
     try:
         with st.spinner(f"📖 AI 正在扩展大纲（预计{estimated_time}）..."):
-            for chunk in llm_service.generate_stream(PromptTemplates.OUTLINE_SYSTEM, prompt):
+            system_p = PromptManager.get(PromptKeys.OUTLINE_SYSTEM)
+            for chunk in llm_service.generate_stream(system_p, prompt):
                 full_response += chunk
                 placeholder.markdown(full_response + "▌")
 
@@ -337,9 +339,8 @@ def _execute_step3_generation(llm_service, total_episodes: int):
     try:
         # 🚨 核心修复：每次运行动态实例化 Processor，绝不使用 session 里的死缓存，确保集数实时更新！
         processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-        processor.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
-        processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
-
+        processor.user_template = PromptManager.get(PromptKeys.SCRIPT_TASK_TEMPLATE)
+        processor.system_prompt = PromptManager.get(PromptKeys.SCRIPT_SYSTEM)
         res = processor.process(
             full_text=st.session_state.outline,
             on_progress=lambda msg, val: progress_bar.progress(val / 100, text=msg)
@@ -360,8 +361,8 @@ def _execute_step3_retry(llm_service, results: dict, total_episodes: int):
     progress_bar = st.progress(0, text="🔄 正在召唤 AI 填补空缺集数...")
     try:
         processor = NovelModeProcessor(llm_service, total_episodes=total_episodes)
-        processor.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
-        processor.system_prompt = PromptTemplates.SCRIPT_SYSTEM
+        processor.user_template = PromptManager.get(PromptKeys.SCRIPT_TASK_TEMPLATE)
+        processor.system_prompt = PromptManager.get(PromptKeys.SCRIPT_SYSTEM)
 
         res = processor.process(
             full_text=st.session_state.outline,

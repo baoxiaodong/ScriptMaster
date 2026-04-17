@@ -5,7 +5,7 @@ import time
 
 import streamlit as st
 from config.settings import CUSTOM_CSS, setup_logger
-from config.settings import NOVEL_MODE_NAME, SCRIPT_MODE_NAME
+from config.settings import NOVEL_MODE_NAME, SCRIPT_MODE_NAME,PROMPT_STUDIO_MODE_NAME
 from ui.components.novel_excel_mode import render_novel_excel_mode
 from ui.components.script_generator import render_script_generation_mode
 from ui.components.sidebar import render_sidebar
@@ -66,7 +66,7 @@ def main():
 
     current_mode = st.radio(
         "切换模式",
-        [NOVEL_MODE_NAME, SCRIPT_MODE_NAME,"🧠 提示词调优工坊"],
+        [NOVEL_MODE_NAME, SCRIPT_MODE_NAME, PROMPT_STUDIO_MODE_NAME],
         label_visibility="collapsed",
         horizontal=True,
         key="app_mode_selector"
@@ -96,7 +96,7 @@ def main():
         # 👇 核心修改：增加调优工坊的渲染分支
         elif current_mode == "🧠 提示词调优工坊":
             logger.info("🧠 [Render] 正在载入: 提示词调优工坊")
-            render_prompt_studio()
+            render_prompt_studio(llm_service)
 
         render_duration = time.time() - render_start
         if render_duration > 0.5:

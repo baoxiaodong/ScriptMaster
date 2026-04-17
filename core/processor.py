@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional
 import pandas as pd
 from core.llm_service import LLMService
 from core.parser import ScriptParser
-from core.prompts import PromptTemplates
+from core.prompt_manager import PromptManager, PromptKeys
 
 logger = logging.getLogger("ScriptMaster.Processor")
 
@@ -21,8 +21,8 @@ class NovelModeProcessor:
         self.results_lock = Lock()
         self.parser = ScriptParser()
         self.total_episodes = total_episodes
-        self.system_prompt = PromptTemplates.SCRIPT_SYSTEM
-        self.user_template = PromptTemplates.BATCH_SCRIPT_PROMPT
+        self.system_prompt = PromptManager.get(PromptKeys.SCRIPT_SYSTEM)
+        self.user_template = PromptManager.get(PromptKeys.BATCH_SCRIPT_PROMPT)
 
     def generate_outline(self, df: pd.DataFrame, on_progress: Optional[Callable] = None) -> str:
         """生成小说大纲功能 - 支持超长文本分段处理"""
@@ -53,13 +53,13 @@ class NovelModeProcessor:
 
     def _generate_outline_from_text(self, text: str, on_progress: Optional[Callable] = None) -> str:
         """从文本生成大纲（单次调用）"""
-        prompt = PromptTemplates.OUTLINE_TASK.format(
+        prompt = PromptManager.get(PromptKeys.OUTLINE_TASK).format(
             total_episodes=self.total_episodes,
             user_choice=text
         )
 
         outline_text = self.llm_service.generate(
-            PromptTemplates.OUTLINE_SYSTEM,
+            PromptManager.get(PromptKeys.OUTLINE_SYSTEM),
             prompt
         )
 

@@ -152,7 +152,7 @@ hr { border: none; border-top: 1.5px solid #F0D9A0 !important; }
 # 🌟 模式名称常量，避免硬编码耦合
 NOVEL_MODE_NAME = "小说智能分镜脚本模式 (动态集数)"
 SCRIPT_MODE_NAME = "剧本创作模式"
-
+PROMPT_STUDIO_MODE_NAME = "🧠 提示词调优工坊"
 # 全局网络超时配置 (单位: 秒)
 # 🌟 新增：全局网络超时配置 (单位: 秒)
 # connect_timeout: 连接服务器超时时间

@@ -75,7 +75,7 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
             elif has_results:
                 error_keys = [k for k, v in _sort_and_clean_results(st.session_state.novel_results).items()
                               if (isinstance(v, str) and v.startswith("❌")) or (hasattr(v, 'empty') and v.empty) or (
-                                          hasattr(v, '__len__') and len(v) < 20)]
+                                      hasattr(v, '__len__') and len(v) < 20)]
                 if error_keys:
                     st.markdown("### 📜 补全分镜脚本")
                     _execute_retry_flow(llm_service, target_df, error_keys,
@@ -147,7 +147,7 @@ def render_novel_excel_mode(llm_service, file_handler: FileHandler):
 
                 error_keys = [k for k, v in sorted_results.items()
                               if (isinstance(v, str) and v.startswith("❌")) or (hasattr(v, 'empty') and v.empty) or (
-                                          hasattr(v, '__len__') and len(v) < 20)]
+                                      hasattr(v, '__len__') and len(v) < 20)]
 
                 retry_disabled = not error_keys
                 retry_label = "🔄 补全缺失集数" if error_keys else "✅ 全部生成成功，完整无缺"
@@ -323,8 +323,8 @@ def _execute_retry_flow(llm_service, df, error_keys, existing_results):
                                     existing_results=existing_results)
         st.session_state.novel_results = results
         update_count = sum(1 for k in error_keys if results.get(k) is not None and not (
-                    isinstance(results.get(k), str) and results.get(k).startswith("❌")) and not (
-                    hasattr(results.get(k), 'empty') and results.get(k).empty))
+                isinstance(results.get(k), str) and results.get(k).startswith("❌")) and not (
+                hasattr(results.get(k), 'empty') and results.get(k).empty))
         progress_bar.progress(1.0, text=f"✅ 补全完成，成功修复 {update_count}/{len(error_keys)} 集")
         st.session_state.novel_is_generating = False
         st.rerun()

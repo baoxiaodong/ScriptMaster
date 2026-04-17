@@ -17,6 +17,7 @@ def find_package_dir(name):
     return None
 
 streamlit_dir = find_package_dir("streamlit")
+tui_editor_dir = find_package_dir("st_tui_editor")
 
 # ── 数据文件 ─────────────────────────────────────────────────────
 datas = []
@@ -28,13 +29,20 @@ datas.append((str(PROJECT_ROOT / "ui"), "app/ui"))
 datas.append((str(PROJECT_ROOT / "utils"), "app/utils"))
 datas.append((str(PROJECT_ROOT / "main.py"), "app"))
 
-# 2. Streamlit 静态资源（JS/CSS/HTML）
+# 2. st_tui_editor 插件资源 (修复打包后缺少 pyproject.toml 报错)
+if tui_editor_dir:
+    if (tui_editor_dir / "pyproject.toml").exists():
+        datas.append((str(tui_editor_dir / "pyproject.toml"), "st_tui_editor"))
+    if (tui_editor_dir / "frontend").exists():
+        datas.append((str(tui_editor_dir / "frontend"), "st_tui_editor/frontend"))
+
+# 3. Streamlit 静态资源（JS/CSS/HTML）
 if streamlit_dir:
     static_dir = streamlit_dir / "static"
     if static_dir.exists():
         datas.append((str(static_dir), "streamlit/static"))
 
-# 3. Streamlit 其他数据子目录（runtime、web 等）
+# 4. Streamlit 其他数据子目录（runtime、web 等）
 if streamlit_dir:
     for item in streamlit_dir.iterdir():
         if item.is_dir() and item.name not in ('static', '__pycache__', 'tests'):
@@ -99,6 +107,9 @@ hiddenimports = [
     'importlib_resources',
     'email.mime.multipart',
     'email.mime.text',
+    'st_tui_editor',
+    'st_tui_editor.editor',
+    'st_tui_editor.components',
 ]
 
 excludes = [
