@@ -8,7 +8,7 @@ import re
 import streamlit as st
 from core.prompt_manager import PromptManager, PromptKeys
 from core.prompts import PromptTemplates
-from st_tui_editor import st_tui_editor
+from streamlit_ace import st_ace
 
 logger = logging.getLogger("ScriptMaster.PromptStudio")
 
@@ -70,16 +70,77 @@ def render_prompt_studio(llm_service):
             st.session_state[session_key] = user_prompt
 
         with st.container(border=True):
+            # 🚀 部署按钮
             if st.button("🚀 部署到生产环境", type="primary", use_container_width=True):
-                PromptManager.update(current_key, st.session_state[session_key])
-                logger.info(f"✅ [PromptStudio] 用户部署提示词资产: {selected_asset}")
-                st.toast(f"✅ [{selected_asset}] 已更新并持久化！", icon="🚀")
+                # 🛡️ 变量沙盒强校验：双向终极防线
+                pattern = r'\{([a-zA-Z_]\w*)\}'
+                official_vars = set(re.findall(pattern, official_prompt))
+                draft_vars = set(re.findall(pattern, st.session_state[session_key]))
+
+                missing_vars = official_vars - draft_vars
+                illegal_vars = draft_vars - official_vars
+
+                if missing_vars or illegal_vars:
+                    st.session_state["deploy_error"] = {
+                        "missing": missing_vars,
+                        "illegal": illegal_vars
+                    }
+                    st.rerun()
+                else:
+                    PromptManager.update(current_key, st.session_state[session_key])
+                    logger.info(f"✅ [PromptStudio] 用户部署提示词资产: {selected_asset}")
+                    st.session_state["show_deploy_success"] = True
+                    st.rerun()
 
             if st.button("🔄 还原官方配置", use_container_width=True):
                 PromptManager.reset(current_key)
                 st.session_state[session_key] = official_prompt
+                st.session_state[f"{session_key}_version"] = st.session_state.get(f"{session_key}_version", 0) + 1
                 logger.info(f"🔄 [PromptStudio] 用户还原官方配置: {selected_asset}")
+                st.session_state["show_restore_success"] = True
                 st.rerun()
+
+            # 👇 处理部署和还原后的状态提示
+            if "deploy_error" in st.session_state:
+                errors = st.session_state.pop("deploy_error")
+                missing = errors.get("missing", set())
+                illegal = errors.get("illegal", set())
+
+                err_msg = "🚨 **部署被强行拦截！**\n\n"
+                if missing:
+                    err_msg += f"❌ **丢失系统必备变量**：`{', '.join(['{' + v + '}' for v in missing])}`\n"
+                if illegal:
+                    err_msg += f"⚠️ **存在非法/拼错变量**：`{', '.join(['{' + v + '}' for v in illegal])}`\n"
+
+                err_msg += "\n**请修正这些 `{变量}` 后重试，否则正式生成时会导致系统彻底崩溃！**"
+                st.error(err_msg, icon="🛑")
+
+            if st.session_state.pop("show_deploy_success", False):
+                st.success("✅ 部署成功！\n新的提示词规则已安全对全局业务生效。", icon="🎉")
+
+            if st.session_state.pop("show_restore_success", False):
+                st.info("🔄 已还原！\n当前模块已恢复为系统初始默认配置。", icon="✨")
+
+            # 👇 纯净版的操作历史与审计日志
+            st.divider()
+            with st.expander("📜 操作历史与审计日志", expanded=False):
+                history_records = PromptManager.get_history()
+
+                if not history_records:
+                    st.caption("暂无操作记录")
+                else:
+                    for record in history_records:
+                        st.markdown(f"""
+                                    <div style="font-size: 12.5px; margin-bottom: 12px; border-left: 2px solid #E8C87A; padding-left: 10px; margin-left: 4px;">
+                                        <span style="color: #A37F58; font-size: 11px;">{record['time']}</span><br>
+                                        <span style="color: #4A4543; font-weight: 600;">{record['action']}</span><br>
+                                        <span style="color: #7A756F;">{record['details']}</span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+
+                    if st.button("🗑️ 清空记录", use_container_width=True):
+                        PromptManager.clear_history()
+                        st.rerun()
 
     current_text = st.session_state[session_key]
     detected_vars = list(set(re.findall(r'\{([^}]+)\}', current_text)))
@@ -95,35 +156,59 @@ def render_prompt_studio(llm_service):
             st.warning(
                 "⚠️ **系统底层红线：** 您可以尽情修改文字规则和防呆约束，但**严禁凭空新增或修改带有 `{}` 的变量名**，否则会导致正式生成时系统彻底崩溃！")
 
-            res = st_tui_editor(
-                content=st.session_state[session_key],
-                height="550px",
-                initial_edit_type="wysiwyg",
-                preview_style="tab",
-                key=f"editor_vfinal_{current_key.name}"
+            # 🌟 官方默认配置参考面板
+            with st.expander("👀 遗忘原版了？点击查看官方默认配置 (仅供参考、复制)"):
+                st.code(official_prompt, language="markdown")
+
+            editor_version = st.session_state.get(f"{session_key}_version", 0)
+
+            # 使用 Ace 编辑器
+            new_content = st_ace(
+                value=st.session_state[session_key] or "",
+                language='markdown',
+                theme='chrome',
+                key=f"ace_editor_{current_key.name}_{editor_version}",
+                height=550,
+                font_size=15,
+                wrap=True,
+                show_gutter=True,
+                show_print_margin=False,
+                auto_update=False,
             )
 
-            # 手动同步检测
-            if res and "markdown" in res:
-                if res["markdown"] != st.session_state[session_key]:
-                    st.session_state[session_key] = res["markdown"]
-                    st.caption("✨ 草稿已同步（点击下方按钮确认刷新以更新 Diff）")
+            if new_content and new_content != st.session_state[session_key]:
+                st.session_state[session_key] = new_content
+                st.toast("💾 草稿已捕获！", icon="✨")
 
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🔄 确认同步改动 (前往 Diff 或 实验室前请点击)", use_container_width=True):
-                st.rerun()
+            st.info(
+                "💡 **操作提示**：在编辑器内按下 `Ctrl + Enter` (Mac 为 `Cmd + Enter`)，或者鼠标点击编辑器外部，即可自动保存草稿并刷新页面！")
 
         with tabs[1]:
+            # 差异比对图例说明
+            st.markdown("""
+                <div style='margin-bottom: 15px; padding: 12px 18px; background: #FFFDF8; border: 1px solid #F0D9A0; border-radius: 8px; font-size: 14px; color: #4A4543;'>
+                    <b style='color: #E3700D;'>💡 差异比对图例：</b><br>
+                    <div style='margin-top: 8px;'>
+                        <span style='background-color: #F0FDF4; color: #166534; padding: 2px 8px; border-radius: 4px; font-family: Consolas, monospace;'>+ 绿色行</span> 代表您 <b>新增或修改</b> 的自定义内容。<br>
+                    </div>
+                    <div style='margin-top: 6px;'>
+                        <span style='background-color: #FEF2F2; color: #991B1B; text-decoration: line-through; padding: 2px 8px; border-radius: 4px; font-family: Consolas, monospace;'>- 红色行</span> 代表官方原版中被您 <b>删除或替换</b> 的旧内容。
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown(get_elegant_diff_html(official_prompt, st.session_state[session_key]), unsafe_allow_html=True)
 
         with tabs[2]:
-            st.info("💡 实验室：已根据上方提取的变量，自动为你生成对应的测试输入框。")
+            st.info("💡 实验室：⚔️ **A/B 双屏擂台！** 左侧运行官方原版，右侧运行你的当前草稿，直观对比优化效果。")
             api_ready = st.session_state.get("api_validated", False)
 
             test_inputs = {}
-            if detected_vars:
+            official_vars = set(re.findall(r'\{([^}]+)\}', official_prompt))
+            if official_vars:
                 st.markdown("**请为以下变量填入模拟数据进行测试：**")
-                for var in detected_vars:
+                for var in official_vars:
                     if var in ["content", "outline", "user_choice", "original_idea"]:
                         test_inputs[var] = st.text_area(f"{{{var}}} (长文本)", height=150, key=f"mock_{var}")
                     else:
@@ -133,38 +218,53 @@ def render_prompt_studio(llm_service):
 
             if not api_ready:
                 st.warning("⚠️ 请先在侧边栏配置并验证 API Key，否则无法进行实时测试。")
-                st.button("⚡ 实时跑一次测试", type="primary", disabled=True, use_container_width=True)
+                st.button("⚔️ 开启 A/B 擂台测试", type="primary", disabled=True, use_container_width=True)
             else:
-                if st.button("⚡ 实时跑一次测试", type="primary", use_container_width=True):
-                    final_prompt = st.session_state[session_key]
+                if st.button("⚔️ 开启 A/B 擂台测试", type="primary", use_container_width=True):
+                    official_test_prompt = official_prompt
+                    draft_test_prompt = st.session_state[session_key]
+
                     for var, val in test_inputs.items():
-                        final_prompt = final_prompt.replace(f"{{{var}}}", str(val))
+                        official_test_prompt = official_test_prompt.replace(f"{{{var}}}", str(val))
+                        draft_test_prompt = draft_test_prompt.replace(f"{{{var}}}", str(val))
 
-                    logger.info(f"🧪 [PromptStudio] 用户启动实验室测试: {selected_asset}")
+                    if current_key == PromptKeys.ACT_GEN_TASK:
+                        sys_key = PromptKeys.ACT_GEN_SYSTEM
+                    elif current_key == PromptKeys.OUTLINE_TASK:
+                        sys_key = PromptKeys.OUTLINE_SYSTEM
+                    else:
+                        sys_key = PromptKeys.SCRIPT_SYSTEM
+                    current_system_prompt = PromptManager.get(sys_key)
 
-                    with st.status("AI 导演审稿中...", expanded=True) as status:
-                        output = st.empty()
-                        content_stream = ""
+                    st.markdown("---")
 
-                        if current_key == PromptKeys.ACT_GEN_TASK:
-                            sys_key = PromptKeys.ACT_GEN_SYSTEM
-                        elif current_key == PromptKeys.OUTLINE_TASK:
-                            sys_key = PromptKeys.OUTLINE_SYSTEM
-                        else:
-                            sys_key = PromptKeys.SCRIPT_SYSTEM
+                    ab_col1, ab_col2 = st.columns(2)
+                    with ab_col1:
+                        st.markdown("### 🏛️ 官方原版输出")
+                        off_status = st.status("正在运行官方配置...", expanded=True)
+                        off_output = st.empty()
 
-                        current_system_prompt = PromptManager.get(sys_key)
+                    with ab_col2:
+                        st.markdown("### 🛠️ 当前调优版输出")
+                        draft_status = st.status("等待官方版运行完毕...", expanded=True)
+                        draft_output = st.empty()
 
-                        try:
-                            for chunk in llm_service.generate_stream(current_system_prompt, final_prompt):
-                                content_stream += chunk
-                                output.markdown(content_stream)
+                    try:
+                        off_stream = ""
+                        for chunk in llm_service.generate_stream(current_system_prompt, official_test_prompt):
+                            off_stream += chunk
+                            off_output.markdown(off_stream)
+                        off_status.update(label="✅ 官方原版运行完毕", state="complete", expanded=False)
 
-                            status.update(label="✅ 测试完成", state="complete", expanded=False)
-                            logger.info(f"✅ [PromptStudio] 实验室测试成功: {selected_asset} ({len(content_stream)}字)")
+                        draft_status.update(label="🚀 正在运行调优配置...", state="running")
+                        draft_stream = ""
+                        for chunk in llm_service.generate_stream(current_system_prompt, draft_test_prompt):
+                            draft_stream += chunk
+                            draft_output.markdown(draft_stream)
+                        draft_status.update(label="✅ 调优版运行完毕", state="complete", expanded=False)
 
-                        except Exception as e:
-                            error_msg = str(e)[:200]
-                            st.error(f"❌ API 测试失败：{error_msg}")
-                            status.update(label=f"❌ 测试失败: {error_msg[:50]}...", state="error", expanded=True)
-                            logger.error(f"❌ [PromptStudio] 实验室测试异常: {selected_asset} - {str(e)}", exc_info=True)
+                        st.balloons()
+
+                    except Exception as e:
+                        st.error(f"❌ A/B 测试执行失败：{str(e)[:200]}")
+                        logger.error(f"❌ [PromptStudio] A/B 测试异常: {str(e)}", exc_info=True)

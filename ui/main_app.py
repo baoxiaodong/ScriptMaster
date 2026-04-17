@@ -94,7 +94,7 @@ def main():
             render_script_generation_mode(llm_service)
 
         # 👇 核心修改：增加调优工坊的渲染分支
-        elif current_mode == "🧠 提示词调优工坊":
+        elif current_mode == PROMPT_STUDIO_MODE_NAME:
             logger.info("🧠 [Render] 正在载入: 提示词调优工坊")
             render_prompt_studio(llm_service)
 
