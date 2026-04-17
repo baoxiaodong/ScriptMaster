@@ -21,7 +21,7 @@ class PromptKeys(str, Enum):
 
 class PromptManager:
     CONFIG_FILE = "config/custom_prompts.json"
-    HISTORY_FILE = "config/prompt_history.json"  # 📜 新增：历史记录文件路径
+    HISTORY_FILE = "config/prompt_history.json"  # 📜 历史记录文件路径
 
     # ================= 📜 历史记录专区 =================
     @classmethod
@@ -103,7 +103,7 @@ class PromptManager:
         with open(cls.CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
-        # 📝 核心改动：成功保存后记录日志
+        # 📝 核心改动：成功保存后触发记录！
         cls.log_action("🚀 部署配置", f"更新了模块 [{key_str}]")
 
     @classmethod
@@ -117,5 +117,5 @@ class PromptManager:
             with open(cls.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            # 📝 核心改动：成功重置后记录日志
+            # 📝 核心改动：成功重置后触发记录！
             cls.log_action("🔄 还原配置", f"将模块 [{key_str}] 恢复为系统默认")
